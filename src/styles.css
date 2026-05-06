@@ -34,6 +34,50 @@
   text-rendering: optimizeLegibility;
 }
 
+:root[data-theme="sakura"] {
+  --color-bg: #f7f1f4;
+  --color-surface: #fffafd;
+  --color-card: #fffdfd;
+  --color-border: #e5d3da;
+  --color-border-soft: #ebdde3;
+  --color-accent: #b84a70;
+  --color-accent-soft: #f7e8ee;
+  --color-accent-border: #d79aad;
+  --color-danger: #b73734;
+  --shadow-focus: 0 0 0 2px rgba(184, 74, 112, 0.16);
+}
+
+:root[data-theme="forest"] {
+  --color-bg: #f0f4ef;
+  --color-surface: #fbfdf9;
+  --color-card: #fffefa;
+  --color-border: #d4ddcf;
+  --color-border-soft: #e1e8dc;
+  --color-accent: #327a4f;
+  --color-accent-soft: #e7f1e8;
+  --color-accent-border: #9fc3a8;
+  --color-danger: #a43b27;
+  --shadow-focus: 0 0 0 2px rgba(50, 122, 79, 0.16);
+}
+
+:root[data-theme="graphite"] {
+  --color-text: #e7e3dc;
+  --color-text-strong: #fffaf0;
+  --color-muted: #b8b0a3;
+  --color-subtle: #a99f91;
+  --color-bg: #20211f;
+  --color-surface: #292b28;
+  --color-card: #31342f;
+  --color-border: #4a4d46;
+  --color-border-soft: #3e423c;
+  --color-accent: #d6a84f;
+  --color-accent-soft: #3d3525;
+  --color-accent-border: #8b7140;
+  --color-danger: #d0644d;
+  --shadow-focus: 0 0 0 2px rgba(214, 168, 79, 0.2);
+  --shadow-modal: 0 18px 60px rgba(0, 0, 0, 0.36);
+}
+
 html {
   height: 100%;
   overflow: hidden;
@@ -149,6 +193,8 @@ button[hidden] {
   border-color: transparent;
   background: transparent;
   color: var(--color-text);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .icon-button.MuiButtonBase-root:not(.Mui-disabled):hover {
@@ -331,6 +377,8 @@ button[hidden] {
 .inspector {
   border-right: 0;
   border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar section,
@@ -469,6 +517,19 @@ button[hidden] {
   color: #25292a;
 }
 
+.summary-button-label {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.summary-button-label svg {
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+
 .summary-button.active {
   background: var(--color-accent-soft);
   border-color: var(--color-accent-border);
@@ -526,6 +587,7 @@ button[hidden] {
   left: 0;
   width: 100%;
   display: grid;
+  justify-content: center;
   gap: var(--space-3);
   will-change: transform;
 }
@@ -759,6 +821,34 @@ button[hidden] {
   padding: var(--space-4);
 }
 
+.inspector-empty {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 28px;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.inspector-empty svg {
+  color: var(--color-accent);
+  opacity: 0.86;
+}
+
+.inspector-empty strong {
+  color: var(--color-text);
+  font-size: var(--font-lg);
+}
+
+.inspector-empty span {
+  max-width: 230px;
+  line-height: 1.5;
+  font-size: var(--font-md);
+}
+
 .inspector-skeleton {
   display: grid;
   gap: var(--space-3);
@@ -869,11 +959,19 @@ button[hidden] {
   grid-template-columns: 1fr auto auto;
   gap: 8px;
   align-items: center;
+  width: 100%;
   padding: 8px;
   border: 1px solid #e2ddd5;
   border-radius: 6px;
   background: var(--color-card);
+  color: var(--color-text);
   font-size: var(--font-sm);
+  text-align: left;
+}
+
+.file-row:not(:disabled):hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
 }
 
 .file-row strong {
@@ -913,6 +1011,13 @@ button[hidden] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
 }
 
 .status-info {
@@ -966,6 +1071,38 @@ button[hidden] {
 
 .about-modal {
   width: 460px;
+}
+
+.settings-modal {
+  width: 430px;
+}
+
+.settings-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  color: var(--color-muted);
+  font-size: var(--font-md);
+  font-weight: 650;
+}
+
+.setting-row select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  color: var(--color-text);
+  padding: 0 10px;
+  font: inherit;
 }
 
 .about-list {

@@ -7,10 +7,16 @@ import {
 } from "@tanstack/react-query";
 import {
   CheckCircle2,
+  FileText,
   FolderPlus,
+  Image,
+  Images,
   Info,
+  Layers,
+  Link2,
   RefreshCw,
   Search,
+  Settings,
   SquareCheckBig,
   Trash2,
 } from "lucide-react";
@@ -21,6 +27,7 @@ import {
   getPhotoGroupMetadata,
   listPhotoGroups,
   listRemovableRoots,
+  openPhotoFile,
   openPhotoGroup,
   pathExists,
   scanRoot,
@@ -32,6 +39,14 @@ import { PhotoGrid } from "./components/PhotoGrid";
 import { SidebarItem } from "./components/SidebarItem";
 import { SummaryButton, SummaryRow } from "./components/Summary";
 import { ToolbarButton } from "./components/ToolbarButton";
+import {
+  LANGUAGE_OPTIONS,
+  normalizeLanguage,
+  translate,
+  type LanguageCode,
+  type TranslationKey,
+} from "./i18n";
+import { THEME_OPTIONS, normalizeTheme, type ThemeCode } from "./theme-options";
 import type { GroupKindFilter, PhotoGroupFilter, ScanSummary } from "./types";
 import { fileName, formatBytes, PAGE_SIZE } from "./utils";
 
@@ -48,6 +63,11 @@ function nearestCardSizePreset(value: number): CardSizePreset {
   return CARD_SIZE_PRESETS.reduce((nearest, preset) =>
     Math.abs(preset.value - value) < Math.abs(nearest.value - value) ? preset : nearest,
   ).value;
+}
+
+function makeTranslator(language: LanguageCode) {
+  return (key: TranslationKey, values?: Record<string, string | number>) =>
+    translate(language, key, values);
 }
 
 function getGroupsFilter(
@@ -73,9 +93,17 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [groupKind, setGroupKind] = useState<GroupKindFilter>("all");
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
-  const [message, setMessage] = useState("Ready.");
+  const [language, setLanguage] = useState<LanguageCode>(() =>
+    normalizeLanguage(window.localStorage.getItem("ppm.language")),
+  );
+  const [theme, setTheme] = useState<ThemeCode>(() =>
+    normalizeTheme(window.localStorage.getItem("ppm.theme")),
+  );
+  const t = useMemo(() => makeTranslator(language), [language]);
+  const [message, setMessage] = useState(() => translate(language, "status.ready"));
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<"info" | "metadata">("info");
   const [cardSize, setCardSize] = useState(() => {
@@ -86,6 +114,19 @@ export default function App() {
   const selectionModeRef = useRef(selectionMode);
   const knownDrivePathsRef = useRef<Set<string>>(new Set());
   const autoScannedPathsRef = useRef<Set<string>>(new Set());
+  const refreshTimerRef = useRef<number | undefined>(undefined);
+  const refreshDelayTimerRef = useRef<number | undefined>(undefined);
+  const refreshLockedRef = useRef(false);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("ppm.theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    window.localStorage.setItem("ppm.language", language);
+  }, [language]);
 
   const rootAvailableQuery = useQuery({
     enabled: Boolean(rootPath),
@@ -134,7 +175,7 @@ export default function App() {
   const scanMutation = useMutation({
     mutationFn: scanRoot,
     onMutate: () => {
-      setMessage("Scanning folders...");
+      setMessage(t("status.scanning"));
     },
     onSuccess: async (summary) => {
       setRootPath(summary.rootPath);
@@ -143,7 +184,7 @@ export default function App() {
       setActiveId("");
       setQuery("");
       await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
-      setMessage(`Scan completed: ${summary.groups} groups, ${summary.files} files.`);
+      setMessage(t("status.scanCompleted", { groups: summary.groups, files: summary.files }));
     },
     onError: (error) => setMessage(String(error)),
   });
@@ -157,9 +198,10 @@ export default function App() {
       await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
       await queryClient.invalidateQueries({ queryKey: ["photo-group-detail"] });
       setMessage(
-        `Moved ${summary.files - summary.failed.length} files to Recycle Bin. ${
-          summary.failed.length ? `${summary.failed.length} failed.` : ""
-        }`,
+        t("status.deleted", {
+          count: summary.files - summary.failed.length,
+          failed: summary.failed.length ? t("status.deletedFailed", { count: summary.failed.length }) : "",
+        }),
       );
     },
     onError: (error) => setMessage(String(error)),
@@ -194,9 +236,9 @@ export default function App() {
     const path = await selectRootFolder();
     if (!path) return;
     setRootPath(path);
-    setMessage("Folder selected; indexing photos...");
+    setMessage(t("source.folderSelected"));
     scanMutation.mutate(path);
-  }, [scanMutation]);
+  }, [scanMutation, t]);
 
   const scan = useCallback(
     (path = rootPath) => {
@@ -207,7 +249,17 @@ export default function App() {
   );
 
   const refreshRemovableRoots = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["removable-roots"] });
+    if (refreshLockedRef.current) return;
+    refreshLockedRef.current = true;
+    window.clearTimeout(refreshDelayTimerRef.current);
+    window.clearTimeout(refreshTimerRef.current);
+    refreshDelayTimerRef.current = window.setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ["removable-roots"] });
+      refreshTimerRef.current = window.setTimeout(() => {
+        refreshLockedRef.current = false;
+        refreshTimerRef.current = undefined;
+      }, 650);
+    }, 160);
   }, [queryClient]);
 
   const clearManualRoot = useCallback(() => {
@@ -215,8 +267,8 @@ export default function App() {
     setActiveId("");
     setSelected(new Set());
     setScanSummary(null);
-    setMessage("Folder removed.");
-  }, []);
+    setMessage(t("source.folderRemoved"));
+  }, [t]);
 
   const toggleSelected = useCallback((id: string) => {
     setSelected((current) => {
@@ -260,15 +312,28 @@ export default function App() {
     async (id: string) => {
       if (selectionModeRef.current) return;
       setActiveId(id);
-      setMessage("Opening photo...");
+      setMessage(t("status.opening"));
       try {
         const path = await openPhotoGroup(id);
-        setMessage(`Opened ${fileName(path)}.`);
+        setMessage(t("status.opened", { name: fileName(path) }));
       } catch (error) {
         setMessage(String(error));
       }
     },
-    [],
+    [t],
+  );
+
+  const openFile = useCallback(
+    async (path: string) => {
+      setMessage(t("status.opening"));
+      try {
+        const openedPath = await openPhotoFile(path);
+        setMessage(t("status.opened", { name: fileName(openedPath) }));
+      } catch (error) {
+        setMessage(String(error));
+      }
+    },
+    [t],
   );
 
   const updateCardSize = useCallback((value: CardSizePreset) => {
@@ -288,6 +353,14 @@ export default function App() {
   }, [selectionMode]);
 
   useEffect(() => {
+    return () => window.clearTimeout(refreshTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    return () => window.clearTimeout(refreshDelayTimerRef.current);
+  }, []);
+
+  useEffect(() => {
     if (!visibleGroups.length || activeId) return;
     setActiveId(visibleGroups[0].id);
   }, [activeId, visibleGroups]);
@@ -304,8 +377,8 @@ export default function App() {
     setActiveId("");
     setSelected(new Set());
     setScanSummary(null);
-    setMessage("Source is offline. Insert the SD card or add a folder manually.");
-  }, [rootAvailableQuery.data]);
+    setMessage(t("source.offline"));
+  }, [rootAvailableQuery.data, t]);
 
   useEffect(() => {
     setInspectorTab("info");
@@ -327,27 +400,27 @@ export default function App() {
     setRootPath(scanPath);
     if (autoScannedPathsRef.current.has(scanPath)) {
       queryClient.invalidateQueries({ queryKey: ["photo-groups", scanPath] });
-      setMessage(`Detected ${nextCandidate.displayName}; cached photos loaded.`);
+      setMessage(t("status.detectedCached", { name: nextCandidate.displayName }));
       return;
     }
 
     autoScannedPathsRef.current.add(scanPath);
-    setMessage(`Detected ${nextCandidate.displayName}; indexing photos...`);
+    setMessage(t("status.detectedIndexing", { name: nextCandidate.displayName }));
     scanMutation.mutate(scanPath);
-  }, [busy, drivesQuery.data, queryClient, scanMutation]);
+  }, [busy, drivesQuery.data, queryClient, scanMutation, t]);
 
   return (
     <div className={`app-shell ${selectionMode ? "selection-mode" : ""}`}>
       <div className="toolbar">
         <ToolbarButton disabled={busy || !hasSource} onClick={() => scan()}>
-          <RefreshCw size={17} /> Rescan
+          <RefreshCw size={17} /> {t("action.rescan")}
         </ToolbarButton>
         <ToolbarButton
           active={selectionMode}
           disabled={busy || !hasSource || !visibleGroups.length}
           onClick={toggleSelectionMode}
         >
-          <SquareCheckBig size={17} /> Multi Select
+          <SquareCheckBig size={17} /> {t("action.multiSelect")}
         </ToolbarButton>
         <ToolbarButton
           disabled={busy || !selectionMode || !selected.size}
@@ -355,12 +428,12 @@ export default function App() {
           onClick={() => setDeleteOpen(true)}
           variant="danger"
         >
-          <Trash2 size={17} /> Delete Selected
+          <Trash2 size={17} /> {t("action.deleteSelected")}
         </ToolbarButton>
         <div className="toolbar-spacer" />
-        <div className="size-control" aria-label="Photo card size" title="Photo card size">
-          <span>Card Size</span>
-          <div className="size-options" role="group" aria-label="Photo card size presets">
+        <div className="size-control" aria-label={t("size.card")} title={t("size.card")}>
+          <span>{t("size.card")}</span>
+          <div className="size-options" role="group" aria-label={t("size.presets")}>
             {CARD_SIZE_PRESETS.map((preset) => (
               <button
                 aria-pressed={cardSize === preset.value}
@@ -383,25 +456,27 @@ export default function App() {
               setActiveId("");
               setSelected(new Set());
             }}
-            placeholder="Search filename"
+            placeholder={t("search.placeholder")}
             disabled={!hasSource}
           />
         </label>
-        {selectionMode && <div className="selection-meter">{selected.size} selected</div>}
+        {selectionMode && (
+          <div className="selection-meter">{t("common.selected", { count: selected.size })}</div>
+        )}
       </div>
 
       <main className="workspace">
         <aside className="sidebar">
           <section>
             <div className="section-heading">
-              <span>Auto Detect</span>
+              <span>{t("source.autoDetect")}</span>
               <div className="heading-actions">
-                <IconButton disabled={busy} label="Add folder" onClick={chooseFolder}>
+                <IconButton disabled={busy} label={t("source.addFolder")} onClick={chooseFolder}>
                   <FolderPlus size={15} />
                 </IconButton>
                 <IconButton
-                  disabled={drivesQuery.isFetching}
-                  label="Refresh removable drives"
+                  disabled={false}
+                  label={t("source.refresh")}
                   onClick={refreshRemovableRoots}
                 >
                   <RefreshCw size={14} />
@@ -419,7 +494,7 @@ export default function App() {
                       label={drive.displayName}
                       onClick={() => {
                         setRootPath(drive.scanPath);
-                        setMessage(`${drive.displayName} selected. Press Rescan to re-index files.`);
+                        setMessage(t("source.selectedManual", { name: drive.displayName }));
                       }}
                       subtitle={drive.scanPath}
                     />
@@ -431,41 +506,46 @@ export default function App() {
                       label={fileName(rootPath) || rootPath}
                       onClear={clearManualRoot}
                       onClick={() => queryClient.invalidateQueries({ queryKey: ["photo-groups"] })}
+                      removeLabel={t("source.removeFolder")}
                       subtitle={rootPath}
                     />
                   ) : null}
                 </>
               ) : (
-                <div className="empty-note">Insert an SD card, or add a folder manually.</div>
+                <div className="empty-note">{t("source.empty")}</div>
               )}
             </div>
           </section>
 
           <section className="scan-summary">
             <div className="section-heading">
-              <span>Scan Summary</span>
+              <span>{t("summary.scan")}</span>
             </div>
             <SummaryButton
               active={groupKind === "all"}
-              label="Groups"
+              icon={<Layers size={15} />}
+              label={t("common.groups")}
               onClick={() => applyKindFilter("all")}
               value={hasSource ? (scanSummary?.groups ?? visibleGroups.length) : 0}
             />
             <SummaryButton
               active={groupKind === "paired"}
-              label="Paired RAW + JPG"
+              icon={<Link2 size={15} />}
+              label={t("filter.paired")}
               onClick={() => applyKindFilter("paired")}
               value={hasSource ? (scanSummary?.pairedGroups ?? 0) : 0}
             />
             <SummaryButton
               active={groupKind === "rawOnly"}
-              label="RAW only"
+              icon={<FileText size={15} />}
+              label={t("filter.rawOnly")}
               onClick={() => applyKindFilter("rawOnly")}
               value={hasSource ? (scanSummary?.rawOnlyGroups ?? 0) : 0}
             />
             <SummaryButton
               active={groupKind === "jpgOnly"}
-              label="JPG only"
+              icon={<Image size={15} />}
+              label={t("filter.jpgOnly")}
               onClick={() => applyKindFilter("jpgOnly")}
               value={hasSource ? (scanSummary?.jpgOnlyGroups ?? 0) : 0}
             />
@@ -474,22 +554,27 @@ export default function App() {
 
         <PhotoGrid
           activeId={activeId}
-          emptyActionLabel="Choose Folder"
+          emptyActionLabel={t("action.chooseFolder")}
           emptyDescription={
             hasSource
-              ? "No RAW/JPG groups found in this source."
-              : "Insert an SD card, or choose a folder to start browsing photos."
+              ? t("empty.noGroupsInSource")
+              : t("empty.waitingDescription")
           }
-          emptyTitle={hasSource ? "No photo groups yet" : "Waiting for photos"}
+          emptyTitle={hasSource ? t("empty.noGroups") : t("empty.waiting")}
+          galleryTitle={t("gallery.allItems")}
           groups={visibleGroups}
           hasMore={visibleHasMoreGroups}
           isFetchingMore={groupsQuery.isFetchingNextPage}
+          loadingMoreLabel={t("gallery.loadingMore")}
           minCardWidth={cardSize}
+          noPreviewLabel={t("empty.noPreview")}
           onActivate={activateOrSelect}
           onEmptyAction={chooseFolder}
           onLoadMore={loadMoreGroups}
           onOpen={openGroup}
           onToggle={toggleSelected}
+          photoGroupsLabel={t("gallery.photoGroups", { count: visibleGroups.length })}
+          scrollToContinueLabel={t("gallery.scrollToContinue")}
           selected={selected}
         />
 
@@ -499,14 +584,14 @@ export default function App() {
               className={inspectorTab === "info" ? "active" : ""}
               onClick={() => setInspectorTab("info")}
             >
-              Info
+              {t("common.info")}
             </button>
             <button
               className={inspectorTab === "metadata" ? "active" : ""}
               onClick={() => setInspectorTab("metadata")}
               disabled={!activeId}
             >
-              Metadata
+              {t("common.metadata")}
             </button>
           </div>
           {detailQuery.isFetching && !detailQuery.data ? (
@@ -515,50 +600,55 @@ export default function App() {
             <>
               <section>
                 <div className="section-heading">
-                  <span>Files</span>
-                  <span>{detailQuery.data.files.length} selected</span>
+                  <span>{t("common.files")}</span>
+                  <span>{t("common.selected", { count: detailQuery.data.files.length })}</span>
                 </div>
                 <div className="file-list">
                   {detailQuery.data.files.map((file) => (
-                    <div className="file-row" key={file.id}>
+                    <button
+                      className="file-row"
+                      key={file.id}
+                      onClick={() => openFile(file.path)}
+                      title={file.path}
+                    >
                       <strong>{file.fileName}</strong>
                       <span>{file.kind.toUpperCase()}</span>
                       <em>{formatBytes(file.size)}</em>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </section>
               <section className="kv">
                 <SummaryRow
-                  label="Capture Time"
+                  label={t("common.captureTime")}
                   value={
                     metadataQuery.data?.captureTime ??
                     detailQuery.data.captureTime ??
-                    (metadataQuery.isFetching ? "Reading..." : "Unknown")
+                    (metadataQuery.isFetching ? t("metadata.reading") : t("metadata.unknown"))
                   }
                 />
                 <SummaryRow
-                  label="Camera"
+                  label={t("common.camera")}
                   value={
                     metadataQuery.data?.cameraModel ??
                     detailQuery.data.cameraModel ??
-                    (metadataQuery.isFetching ? "Reading..." : "Unknown")
+                    (metadataQuery.isFetching ? t("metadata.reading") : t("metadata.unknown"))
                   }
                 />
                 <SummaryRow
-                  label="Lens"
+                  label={t("common.lens")}
                   value={
                     metadataQuery.data?.lens ??
                     detailQuery.data.lens ??
-                    (metadataQuery.isFetching ? "Reading..." : "Unknown")
+                    (metadataQuery.isFetching ? t("metadata.reading") : t("metadata.unknown"))
                   }
                 />
-                <SummaryRow label="Folder" value={detailQuery.data.folderName} />
-                <SummaryRow label="Total Size" value={formatBytes(detailQuery.data.totalSize)} />
+                <SummaryRow label={t("common.folder")} value={detailQuery.data.folderName} />
+                <SummaryRow label={t("common.totalSize")} value={formatBytes(detailQuery.data.totalSize)} />
               </section>
               <section>
                 <div className="section-heading">
-                  <span>Path</span>
+                  <span>{t("common.path")}</span>
                 </div>
                 <div className="paths">
                   {detailQuery.data.files.map((file) => (
@@ -572,9 +662,14 @@ export default function App() {
               error={metadataQuery.data?.error}
               isLoading={metadataQuery.isFetching}
               metadata={metadataQuery.data}
+              t={t}
             />
           ) : (
-            <div className="empty-note">Select a photo group to inspect files.</div>
+            <div className="inspector-empty">
+              <Images size={42} />
+              <strong>{t("empty.inspectorTitle")}</strong>
+              <span>{t("empty.inspector")}</span>
+            </div>
           )}
         </aside>
       </main>
@@ -584,9 +679,14 @@ export default function App() {
           <CheckCircle2 size={16} />
           <span>{message}</span>
         </div>
-        <button className="status-info" aria-label="About this project" onClick={() => setAboutOpen(true)}>
-          <Info size={15} />
-        </button>
+        <div className="status-actions">
+          <button className="status-info" aria-label={t("common.info")} onClick={() => setAboutOpen(true)}>
+            <Info size={15} />
+          </button>
+          <button className="status-info" aria-label={t("setting.open")} onClick={() => setSettingsOpen(true)}>
+            <Settings size={15} />
+          </button>
+        </div>
       </footer>
 
       {aboutOpen && (
@@ -601,18 +701,62 @@ export default function App() {
               <Info size={20} />
               <h2>Panasonic Pair Manager</h2>
             </header>
-            <p>
-              A Windows-first photo manager for Panasonic RAW/JPG pairs. It scans SD card folders,
-              groups matching files, previews JPGs, and helps safely manage paired RAW/JPG sets.
-            </p>
+            <p>{t("about.description")}</p>
             <div className="about-list">
-              <SummaryRow label="Stack" value="Tauri 2, Rust, React, SQLite" />
-              <SummaryRow label="Preview" value="Paired JPG" />
-              <SummaryRow label="Delete" value="Windows Recycle Bin" />
-              <SummaryRow label="Metadata" value="ExifTool or built-in JPG EXIF" />
+              <SummaryRow label="Stack" value={t("about.stack")} />
+              <SummaryRow label="Preview" value={t("about.preview")} />
+              <SummaryRow label="Delete" value={t("about.delete")} />
+              <SummaryRow label="Metadata" value={t("about.metadata")} />
             </div>
             <div className="modal-actions">
-              <Button onClick={() => setAboutOpen(false)}>Close</Button>
+              <Button onClick={() => setAboutOpen(false)}>{t("action.close")}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {settingsOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
+          <div
+            className="modal settings-modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <Settings size={20} />
+              <h2>{t("setting.title")}</h2>
+            </header>
+            <div className="settings-list">
+              <label className="setting-row">
+                <span>{t("setting.theme")}</span>
+                <select
+                  value={theme}
+                  onChange={(event) => setTheme(normalizeTheme(event.target.value))}
+                >
+                  {THEME_OPTIONS.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="setting-row">
+                <span>{t("setting.language")}</span>
+                <select
+                  value={language}
+                  onChange={(event) => setLanguage(normalizeLanguage(event.target.value))}
+                >
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="modal-actions">
+              <Button onClick={() => setSettingsOpen(false)}>{t("action.close")}</Button>
             </div>
           </div>
         </div>
@@ -623,26 +767,26 @@ export default function App() {
           <div className="modal" role="dialog" aria-modal="true">
             <header>
               <Trash2 size={20} />
-              <h2>Delete Selected Items</h2>
+              <h2>{t("delete.title")}</h2>
             </header>
-            <p>Move the selected RAW/JPG groups to the Windows Recycle Bin.</p>
+            <p>{t("delete.confirmDescription")}</p>
             <div className="delete-stats">
-              <SummaryRow label="Groups" value={deletePlan.groups} />
-              <SummaryRow label="Files" value={deletePlan.files} />
-              <SummaryRow label="RAW files" value={deletePlan.rawFiles} />
-              <SummaryRow label="JPG files" value={deletePlan.jpgFiles} />
-              <SummaryRow label="Total size" value={formatBytes(deletePlan.totalSize)} />
+              <SummaryRow label={t("common.groups")} value={deletePlan.groups} />
+              <SummaryRow label={t("common.files")} value={deletePlan.files} />
+              <SummaryRow label={t("delete.rawFiles")} value={deletePlan.rawFiles} />
+              <SummaryRow label={t("delete.jpgFiles")} value={deletePlan.jpgFiles} />
+              <SummaryRow label={t("common.totalSize")} value={formatBytes(deletePlan.totalSize)} />
             </div>
             <label className="recycle-check">
               <input type="checkbox" checked readOnly />
-              Move to Recycle Bin
+              {t("delete.moveToRecycle")}
             </label>
             <div className="modal-actions">
               <Button disabled={busy} onClick={confirmDelete} variant="solidDanger">
-                Delete
+                {t("action.delete")}
               </Button>
               <Button disabled={busy} onClick={() => setDeleteOpen(false)}>
-                Cancel
+                {t("action.cancel")}
               </Button>
             </div>
           </div>
@@ -656,6 +800,7 @@ function MetadataPanel({
   error,
   isLoading,
   metadata,
+  t,
 }: {
   error?: string;
   isLoading: boolean;
@@ -669,6 +814,7 @@ function MetadataPanel({
     height?: number;
     items: { tag: string; value: string }[];
   };
+  t: ReturnType<typeof makeTranslator>;
 }) {
   if (isLoading && !metadata) {
     return <MetadataSkeleton />;
@@ -678,12 +824,12 @@ function MetadataPanel({
     return (
       <section>
         <div className="section-heading">
-          <span>Metadata</span>
+          <span>{t("common.metadata")}</span>
         </div>
         <div className="metadata-error">
-          <strong>ExifTool unavailable or failed</strong>
+          <strong>{t("metadata.errorTitle")}</strong>
           <p>{error}</p>
-          <span>Scanning still works; install ExifTool or add it to PATH to read camera metadata.</span>
+          <span>{t("metadata.errorDetail")}</span>
         </div>
       </section>
     );
@@ -692,30 +838,30 @@ function MetadataPanel({
   return (
     <>
       <section className="kv">
-        <SummaryRow label="Capture Time" value={metadata?.captureTime ?? "Unknown"} />
-        <SummaryRow label="Camera" value={metadata?.cameraModel ?? "Unknown"} />
-        <SummaryRow label="Lens" value={metadata?.lens ?? "Unknown"} />
+        <SummaryRow label={t("common.captureTime")} value={metadata?.captureTime ?? t("metadata.unknown")} />
+        <SummaryRow label={t("common.camera")} value={metadata?.cameraModel ?? t("metadata.unknown")} />
+        <SummaryRow label={t("common.lens")} value={metadata?.lens ?? t("metadata.unknown")} />
         <SummaryRow
-          label="Dimensions"
+          label={t("common.dimensions")}
           value={
             metadata?.width && metadata.height
               ? `${metadata.width} x ${metadata.height}`
-              : "Unknown"
+              : t("metadata.unknown")
           }
         />
       </section>
       <section>
         <div className="section-heading">
-          <span>Metadata Source</span>
+          <span>{t("metadata.source")}</span>
         </div>
         <div className="paths">
-          <p>{metadata?.sourcePath ?? "No metadata source file."}</p>
+          <p>{metadata?.sourcePath ?? t("metadata.sourceEmpty")}</p>
         </div>
       </section>
       <section>
         <div className="section-heading">
-          <span>All Metadata</span>
-          <span>{metadata?.items.length ?? 0} fields</span>
+          <span>{t("metadata.all")}</span>
+          <span>{t("metadata.fields", { count: metadata?.items.length ?? 0 })}</span>
         </div>
         {metadata?.items.length ? (
           <div className="metadata-list">
@@ -727,7 +873,7 @@ function MetadataPanel({
             ))}
           </div>
         ) : (
-          <div className="empty-note">No embedded EXIF fields found.</div>
+          <div className="empty-note">{t("empty.noExif")}</div>
         )}
       </section>
     </>

@@ -41,6 +41,10 @@ export function openPhotoGroup(id: string) {
   return invoke<string>("open_photo_group", { id });
 }
 
+export function openPhotoFile(path: string) {
+  return invoke<string>("open_photo_file", { path });
+}
+
 export function listRemovableRoots() {
   return invoke<DriveCandidate[]>("list_removable_roots");
 }

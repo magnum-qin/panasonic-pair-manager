@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export function SummaryRow({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="summary-row">
@@ -9,18 +11,23 @@ export function SummaryRow({ label, value }: { label: string; value: string | nu
 
 export function SummaryButton({
   active,
+  icon,
   label,
   value,
   onClick,
 }: {
   active: boolean;
+  icon?: ReactNode;
   label: string;
   value: string | number;
   onClick: () => void;
 }) {
   return (
     <button className={`summary-button ${active ? "active" : ""}`} onClick={onClick}>
-      <span>{label}</span>
+      <span className="summary-button-label">
+        {icon}
+        {label}
+      </span>
       <strong>{value}</strong>
     </button>
   );

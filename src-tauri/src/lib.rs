@@ -266,6 +266,20 @@ async fn open_photo_group(state: State<'_, AppState>, id: String) -> Result<Stri
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+async fn open_photo_file(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = PathBuf::from(&path);
+        if !source.exists() {
+            return Err(format!("file does not exist: {path}"));
+        }
+        open_path(&path)?;
+        Ok(path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 fn open_path(path: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let status = Command::new("rundll32")
@@ -321,6 +335,7 @@ pub fn run() {
             get_photo_group_metadata,
             delete_photo_groups,
             open_photo_group,
+            open_photo_file,
             path_exists,
             list_removable_roots
         ])

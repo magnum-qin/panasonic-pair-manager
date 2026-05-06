@@ -32,30 +32,40 @@ export function PhotoGrid({
   emptyActionLabel,
   emptyDescription = "Select a folder and scan for `.RW2` / `.JPG` pairs.",
   emptyTitle = "No photo groups yet",
+  galleryTitle,
   groups,
   hasMore,
   isFetchingMore,
+  loadingMoreLabel,
   minCardWidth,
+  noPreviewLabel,
   onActivate,
   onEmptyAction,
   onLoadMore,
   onOpen,
   onToggle,
+  photoGroupsLabel,
+  scrollToContinueLabel,
   selected,
 }: {
   activeId: string;
   emptyActionLabel?: string;
   emptyDescription?: string;
   emptyTitle?: string;
+  galleryTitle: string;
   groups: PhotoGroup[];
   hasMore: boolean;
   isFetchingMore: boolean;
+  loadingMoreLabel: string;
   minCardWidth: number;
+  noPreviewLabel: string;
   onActivate: (id: string) => void;
   onEmptyAction?: () => void;
   onLoadMore: () => void;
   onOpen: (id: string) => void;
   onToggle: (id: string) => void;
+  photoGroupsLabel: string;
+  scrollToContinueLabel: string;
   selected: Set<string>;
 }) {
   const [scrollRef, width] = useElementWidth<HTMLElement>();
@@ -97,8 +107,8 @@ export function PhotoGrid({
     <section className="gallery" ref={scrollRef}>
       <div className="gallery-header">
         <div>
-          <h2>All Items</h2>
-          <span>{groups.length} photo groups</span>
+          <h2>{galleryTitle}</h2>
+          <span>{photoGroupsLabel}</span>
         </div>
         <span>{formatBytes(totalSize)}</span>
       </div>
@@ -132,7 +142,7 @@ export function PhotoGrid({
                 {isLoaderRow ? (
                   <div className="inline-loader" aria-live="polite">
                     <span />
-                    <strong>{isFetchingMore ? "Loading more photos..." : "Scroll to continue"}</strong>
+                    <strong>{isFetchingMore ? loadingMoreLabel : scrollToContinueLabel}</strong>
                   </div>
                 ) : (
                   rowGroups.map((group) => (
@@ -141,6 +151,7 @@ export function PhotoGrid({
                       isActive={activeId === group.id}
                       isSelected={selected.has(group.id)}
                       key={group.id}
+                      noPreviewLabel={noPreviewLabel}
                       thumbnailSize={thumbnailSize}
                       onActivate={onActivate}
                       onOpen={onOpen}

@@ -9,6 +9,7 @@ export function SidebarItem({
   label,
   onClear,
   onClick,
+  removeLabel = "Remove folder",
   subtitle,
 }: {
   active?: boolean;
@@ -17,6 +18,7 @@ export function SidebarItem({
   label: string;
   onClear?: () => void;
   onClick?: () => void;
+  removeLabel?: string;
   subtitle: string;
 }) {
   const pointerHandledRef = useRef(false);
@@ -46,7 +48,7 @@ export function SidebarItem({
       </div>
       {onClear ? (
         <button
-          aria-label={`Remove ${label}`}
+          aria-label={removeLabel}
           className="source-card-remove"
           disabled={disabled}
           onClick={(event) => {
@@ -56,7 +58,7 @@ export function SidebarItem({
           onPointerDown={(event) => {
             event.stopPropagation();
           }}
-          title="Remove folder"
+          title={removeLabel}
           type="button"
         >
           <X size={15} />

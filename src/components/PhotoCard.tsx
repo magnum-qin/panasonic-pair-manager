@@ -16,10 +16,12 @@ export const PhotoCard = memo(function PhotoCard({
   onActivate,
   onOpen,
   onToggle,
+  noPreviewLabel,
 }: {
   group: PhotoGroup;
   isActive: boolean;
   isSelected: boolean;
+  noPreviewLabel: string;
   thumbnailSize: number;
   onActivate: (id: string) => void;
   onOpen: (id: string) => void;
@@ -86,7 +88,7 @@ export const PhotoCard = memo(function PhotoCard({
         ) : (
           <div className="no-preview">
             <ImageOff size={30} />
-            <span>No JPG preview</span>
+            <span>{noPreviewLabel}</span>
           </div>
         )}
         <div className="badges">
