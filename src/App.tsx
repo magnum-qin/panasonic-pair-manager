@@ -5,6 +5,8 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import {
   CheckCircle2,
   FileText,
@@ -730,29 +732,35 @@ export default function App() {
             <div className="settings-list">
               <label className="setting-row">
                 <span>{t("setting.theme")}</span>
-                <select
+                <Select
+                  className="setting-select"
+                  MenuProps={{ classes: { paper: "setting-select-menu" } }}
+                  size="small"
                   value={theme}
                   onChange={(event) => setTheme(normalizeTheme(event.target.value))}
                 >
                   {THEME_OPTIONS.map((option) => (
-                    <option key={option.code} value={option.code}>
+                    <MenuItem key={option.code} value={option.code}>
                       {option.label}
-                    </option>
+                    </MenuItem>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="setting-row">
                 <span>{t("setting.language")}</span>
-                <select
+                <Select
+                  className="setting-select"
+                  MenuProps={{ classes: { paper: "setting-select-menu" } }}
+                  size="small"
                   value={language}
                   onChange={(event) => setLanguage(normalizeLanguage(event.target.value))}
                 >
                   {LANGUAGE_OPTIONS.map((option) => (
-                    <option key={option.code} value={option.code}>
+                    <MenuItem key={option.code} value={option.code}>
                       {option.label}
-                    </option>
+                    </MenuItem>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
             <div className="modal-actions">
