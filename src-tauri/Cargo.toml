@@ -1,0 +1,31 @@
+[package]
+name = "panasonic-pair-manager"
+version = "0.1.0"
+description = "RAW/JPG pair manager for Panasonic camera folders"
+authors = ["Codex"]
+edition = "2021"
+
+[lib]
+name = "panasonic_pair_manager_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+kamadak-exif = { version = "0.6.1", default-features = false }
+rfd = "0.15"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+tauri = { version = "2", features = ["protocol-asset"] }
+thiserror = "2"
+trash = "5"
+walkdir = "2"
+windows-sys = { version = "0.60", features = ["Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+tempfile = "3"

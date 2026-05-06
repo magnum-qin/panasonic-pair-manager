@@ -1,0 +1,6 @@
+node_modules/
+dist/
+output/
+src-tauri/target/
+*.log
+.research/
