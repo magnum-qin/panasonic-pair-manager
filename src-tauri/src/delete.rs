@@ -89,8 +89,14 @@ mod tests {
             },
         ];
 
-        let raw = files.iter().filter(|file| matches!(file.kind, FileKind::Raw)).count();
-        let jpg = files.iter().filter(|file| matches!(file.kind, FileKind::Jpg)).count();
+        let raw = files
+            .iter()
+            .filter(|file| matches!(file.kind, FileKind::Raw))
+            .count();
+        let jpg = files
+            .iter()
+            .filter(|file| matches!(file.kind, FileKind::Jpg))
+            .count();
 
         assert_eq!(raw, 1);
         assert_eq!(jpg, 1);

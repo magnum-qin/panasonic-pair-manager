@@ -42,6 +42,12 @@ export type TranslationKey =
   | "delete.moveToRecycle"
   | "delete.rawFiles"
   | "delete.jpgFiles"
+  | "delete.sidecarFiles"
+  | "delete.filePreview"
+  | "delete.loadingFiles"
+  | "delete.moreFiles"
+  | "delete.noFiles"
+  | "delete.openContainingFolder"
   | "delete.title"
   | "empty.addFolder"
   | "empty.inspector"
@@ -50,6 +56,10 @@ export type TranslationKey =
   | "empty.noGroups"
   | "empty.noGroupsInSource"
   | "empty.noPreview"
+  | "empty.scanningDescription"
+  | "empty.scanningTitle"
+  | "empty.unscannedDescription"
+  | "empty.unscannedTitle"
   | "empty.waiting"
   | "empty.waitingDescription"
   | "gallery.allItems"
@@ -134,6 +144,12 @@ const en: TranslationMap = {
   "delete.moveToRecycle": "Move to Recycle Bin",
   "delete.rawFiles": "RAW files",
   "delete.jpgFiles": "JPG files",
+  "delete.sidecarFiles": "Sidecar files",
+  "delete.filePreview": "Files to delete",
+  "delete.loadingFiles": "Reading file list...",
+  "delete.moreFiles": "+{count} more files",
+  "delete.noFiles": "No file details loaded yet.",
+  "delete.openContainingFolder": "Open Folder",
   "delete.title": "Delete Selected Items",
   "empty.addFolder": "Add Folder",
   "empty.inspector": "Select a photo group to inspect files.",
@@ -142,6 +158,10 @@ const en: TranslationMap = {
   "empty.noGroups": "No photo groups yet",
   "empty.noGroupsInSource": "No RAW/JPG groups found in this source.",
   "empty.noPreview": "No JPG preview",
+  "empty.scanningDescription": "Indexing this source now. Photos will appear here as soon as the scan completes.",
+  "empty.scanningTitle": "Scanning {name}",
+  "empty.unscannedDescription": "This source is selected but has no saved scan yet. Press Rescan to build the photo index.",
+  "empty.unscannedTitle": "Source not scanned yet",
   "empty.waiting": "Waiting for photos",
   "empty.waitingDescription": "Insert an SD card, or choose a folder to start browsing photos.",
   "gallery.allItems": "All Items",
@@ -221,6 +241,12 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "delete.moveToRecycle": "移动到回收站",
     "delete.rawFiles": "RAW 文件",
     "delete.jpgFiles": "JPG 文件",
+    "delete.sidecarFiles": "附属文件",
+    "delete.filePreview": "将删除的文件",
+    "delete.loadingFiles": "正在读取文件清单...",
+    "delete.moreFiles": "还有 {count} 个文件",
+    "delete.noFiles": "尚未加载文件详情。",
+    "delete.openContainingFolder": "打开所在文件夹",
     "delete.title": "删除所选项目",
     "empty.addFolder": "添加文件夹",
     "empty.inspector": "选择一个照片组以查看文件。",
@@ -229,6 +255,10 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "empty.noGroups": "还没有照片组",
     "empty.noGroupsInSource": "此来源中未找到 RAW/JPG 组。",
     "empty.noPreview": "没有 JPG 预览",
+    "empty.scanningDescription": "正在为此来源建立索引。扫描完成后照片会显示在这里。",
+    "empty.scanningTitle": "正在扫描 {name}",
+    "empty.unscannedDescription": "此来源已选中，但还没有保存过扫描结果。点击重新扫描以建立照片索引。",
+    "empty.unscannedTitle": "此来源尚未扫描",
     "empty.waiting": "等待照片",
     "empty.waitingDescription": "插入 SD 卡，或选择文件夹开始浏览照片。",
     "gallery.allItems": "全部项目",
@@ -304,6 +334,12 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "delete.moveToRecycle": "移到資源回收筒",
     "delete.rawFiles": "RAW 檔案",
     "delete.jpgFiles": "JPG 檔案",
+    "delete.sidecarFiles": "附屬檔案",
+    "delete.filePreview": "將刪除的檔案",
+    "delete.loadingFiles": "正在讀取檔案清單...",
+    "delete.moreFiles": "還有 {count} 個檔案",
+    "delete.noFiles": "尚未載入檔案詳細資料。",
+    "delete.openContainingFolder": "開啟所在資料夾",
     "delete.title": "刪除所選項目",
     "empty.addFolder": "新增資料夾",
     "empty.inspector": "選擇一個照片組以查看檔案。",
@@ -312,6 +348,10 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "empty.noGroups": "尚無照片組",
     "empty.noGroupsInSource": "此來源中未找到 RAW/JPG 組。",
     "empty.noPreview": "沒有 JPG 預覽",
+    "empty.scanningDescription": "正在為此來源建立索引。掃描完成後照片會顯示在這裡。",
+    "empty.scanningTitle": "正在掃描 {name}",
+    "empty.unscannedDescription": "此來源已選取，但還沒有儲存過掃描結果。點擊重新掃描以建立照片索引。",
+    "empty.unscannedTitle": "此來源尚未掃描",
     "empty.waiting": "等待照片",
     "empty.waitingDescription": "插入 SD 卡，或選擇資料夾開始瀏覽照片。",
     "gallery.allItems": "全部項目",

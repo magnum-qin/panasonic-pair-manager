@@ -29,6 +29,10 @@ export function getScanSummary(rootPath: string) {
   return invoke<ScanSummary>("get_scan_summary", { rootPath });
 }
 
+export function hasScanForRoot(rootPath: string) {
+  return invoke<boolean>("has_scan_for_root", { rootPath });
+}
+
 export function getPhotoGroup(id: string) {
   return invoke<PhotoGroupDetail>("get_photo_group", { id });
 }

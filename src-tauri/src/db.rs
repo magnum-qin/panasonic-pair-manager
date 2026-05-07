@@ -93,7 +93,10 @@ impl Database {
              WHERE group_id IN (SELECT id FROM photo_groups WHERE root_path = ?1)",
             params![root],
         )?;
-        tx.execute("DELETE FROM photo_groups WHERE root_path = ?1", params![root])?;
+        tx.execute(
+            "DELETE FROM photo_groups WHERE root_path = ?1",
+            params![root],
+        )?;
 
         for group in groups {
             tx.execute(
@@ -259,6 +262,15 @@ impl Database {
                     jpg_only_groups: row.get::<_, i64>(7)? as usize,
                 })
             },
+        )
+    }
+
+    pub fn has_scan_for_root(&self, root_path: &str) -> rusqlite::Result<bool> {
+        let conn = self.connect()?;
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM roots WHERE path = ?1)",
+            params![root_path],
+            |row| row.get::<_, i64>(0).map(|value| value != 0),
         )
     }
 

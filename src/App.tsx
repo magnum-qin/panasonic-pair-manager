@@ -4,6 +4,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  useQueries,
 } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import MenuItem from "@mui/material/MenuItem";
@@ -40,6 +41,7 @@ import {
   getPhotoGroup,
   getPhotoGroupMetadata,
   getScanSummary,
+  hasScanForRoot,
   listPhotoGroups,
   listRemovableRoots,
   openPhotoFile,
@@ -75,6 +77,7 @@ const CARD_SIZE_PRESETS = [
 type CardSizePreset = (typeof CARD_SIZE_PRESETS)[number]["value"];
 
 const MANUAL_ROOTS_STORAGE_KEY = "ppm.manualRoots";
+const DELETE_FILE_PREVIEW_LIMIT = 18;
 
 function loadStoredManualRoots() {
   try {
@@ -114,6 +117,11 @@ function getGroupsFilter(
     limit: PAGE_SIZE + 1,
     offset,
   };
+}
+
+function dirName(path: string) {
+  const index = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+  return index > 0 ? path.slice(0, index) : path;
 }
 
 export default function App() {
@@ -237,6 +245,12 @@ export default function App() {
     queryKey: ["photo-group-count", rootPath, deferredQuery, groupKind],
   });
 
+  const rootScanQuery = useQuery({
+    enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
+    queryFn: () => hasScanForRoot(rootPath),
+    queryKey: ["root-scan-state", rootPath],
+  });
+
   const groups = useMemo(
     () => groupsQuery.data?.pages.flatMap((page) => page.slice(0, PAGE_SIZE)) ?? [],
     [groupsQuery.data],
@@ -297,6 +311,7 @@ export default function App() {
       setQuery("");
       await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
       await queryClient.invalidateQueries({ queryKey: ["photo-group-count"] });
+      await queryClient.invalidateQueries({ queryKey: ["root-scan-state", summary.rootPath] });
       await queryClient.invalidateQueries({ queryKey: ["scan-summary", summary.rootPath] });
       setMessage(t("status.scanCompleted", { groups: summary.groups, files: summary.files }));
     },
@@ -335,10 +350,50 @@ export default function App() {
   const currentSummary =
     hasSource ? (summaryQuery.data ?? (scanSummary?.rootPath === rootPath ? scanSummary : null)) : null;
   const visibleGroupCount = hasSource ? (groupCountQuery.data ?? visibleGroups.length) : 0;
+  const sourceWasScanned = rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
+  const selectedDrive = detectedRoots.find((drive) => drive.scanPath === rootPath);
+  const sourceName = selectedDrive?.displayName ?? (rootPath ? fileName(rootPath) || rootPath : "");
+  const emptyState = useMemo(() => {
+    if (scanning && rootPath) {
+      return {
+        title: t("empty.scanningTitle", { name: sourceName || rootPath }),
+        description: t("empty.scanningDescription"),
+      };
+    }
+    if (hasSource && !sourceWasScanned) {
+      return {
+        title: t("empty.unscannedTitle"),
+        description: t("empty.unscannedDescription"),
+      };
+    }
+    if (hasSource && sourceWasScanned) {
+      return {
+        title: t("empty.noGroups"),
+        description: t("empty.noGroupsInSource"),
+      };
+    }
+    return {
+      title: t("empty.waiting"),
+      description: t("empty.waitingDescription"),
+    };
+  }, [hasSource, rootPath, rootScanQuery.data, scanning, sourceName, sourceWasScanned, t]);
   const modalOpen = aboutOpen || settingsOpen || deleteOpen;
   const selectedGroups = useMemo(
     () => visibleGroups.filter((group) => selected.has(group.id)),
     [selected, visibleGroups],
+  );
+  const selectedIds = useMemo(() => [...selected], [selected]);
+  const deleteDetailQueries = useQueries({
+    queries: selectedIds.map((id) => ({
+      enabled: deleteOpen,
+      queryFn: () => getPhotoGroup(id),
+      queryKey: ["photo-group-detail", id],
+    })),
+  });
+  const deleteDetailLoading = deleteOpen && deleteDetailQueries.some((query) => query.isFetching);
+  const deleteFiles = useMemo(
+    () => deleteDetailQueries.flatMap((query) => query.data?.files ?? []),
+    [deleteDetailQueries],
   );
 
   const deletePlan = useMemo(() => {
@@ -347,11 +402,12 @@ export default function App() {
         acc.groups += 1;
         acc.rawFiles += group.rawCount;
         acc.jpgFiles += group.jpgCount;
+        acc.sidecarFiles += group.sidecarCount;
         acc.files += group.rawCount + group.jpgCount + group.sidecarCount;
         acc.totalSize += group.totalSize;
         return acc;
       },
-      { groups: 0, files: 0, rawFiles: 0, jpgFiles: 0, totalSize: 0 },
+      { groups: 0, files: 0, rawFiles: 0, jpgFiles: 0, sidecarFiles: 0, totalSize: 0 },
     );
   }, [selectedGroups]);
 
@@ -586,10 +642,14 @@ export default function App() {
     const nextCandidate = candidates.find(
       (candidate) => !knownDrivePathsRef.current.has(candidate.scanPath),
     );
+
+    if (!nextCandidate) {
+      knownDrivePathsRef.current = currentPaths;
+      return;
+    }
+    if (busy) return;
+
     knownDrivePathsRef.current = currentPaths;
-
-    if (!nextCandidate || busy) return;
-
     const scanPath = nextCandidate.scanPath;
     setRootPath(scanPath);
     setMessage(t("status.detectedIndexing", { name: nextCandidate.displayName }));
@@ -786,12 +846,8 @@ export default function App() {
         <PhotoGrid
           activeId={activeId}
           emptyActionLabel={t("action.chooseFolder")}
-          emptyDescription={
-            hasSource
-              ? t("empty.noGroupsInSource")
-              : t("empty.waitingDescription")
-          }
-          emptyTitle={hasSource ? t("empty.noGroups") : t("empty.waiting")}
+          emptyDescription={emptyState.description}
+          emptyTitle={emptyState.title}
           galleryTitle={t("gallery.allItems")}
           groups={visibleGroups}
           hasMore={visibleHasMoreGroups}
@@ -1048,13 +1104,49 @@ export default function App() {
               <SummaryRow label={t("common.files")} value={deletePlan.files} />
               <SummaryRow label={t("delete.rawFiles")} value={deletePlan.rawFiles} />
               <SummaryRow label={t("delete.jpgFiles")} value={deletePlan.jpgFiles} />
+              <SummaryRow label={t("delete.sidecarFiles")} value={deletePlan.sidecarFiles} />
               <SummaryRow label={t("common.totalSize")} value={formatBytes(deletePlan.totalSize)} />
+            </div>
+            <div className="delete-file-preview">
+              <div className="section-heading">
+                <span>{t("delete.filePreview")}</span>
+                {deleteDetailLoading ? <span>{t("delete.loadingFiles")}</span> : null}
+              </div>
+              {deleteFiles.length ? (
+                <div className="delete-file-list">
+                  {deleteFiles.slice(0, DELETE_FILE_PREVIEW_LIMIT).map((file) => (
+                    <div className="delete-file-row" key={file.id} title={file.path}>
+                      <strong>{file.fileName}</strong>
+                      <span>{file.kind.toUpperCase()}</span>
+                      <em>{formatBytes(file.size)}</em>
+                    </div>
+                  ))}
+                  {deleteFiles.length > DELETE_FILE_PREVIEW_LIMIT ? (
+                    <div className="delete-file-more">
+                      {t("delete.moreFiles", { count: deleteFiles.length - DELETE_FILE_PREVIEW_LIMIT })}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="empty-note compact">
+                  {deleteDetailLoading ? t("delete.loadingFiles") : t("delete.noFiles")}
+                </div>
+              )}
             </div>
             <label className="recycle-check">
               <input type="checkbox" checked readOnly />
               {t("delete.moveToRecycle")}
             </label>
             <div className="modal-actions">
+              <Button
+                disabled={deleting || !deleteFiles.length}
+                onClick={() => {
+                  const firstFile = deleteFiles[0];
+                  if (firstFile) openFile(dirName(firstFile.path));
+                }}
+              >
+                {t("delete.openContainingFolder")}
+              </Button>
               <Button disabled={deleting} onClick={confirmDelete} variant="solidDanger">
                 {t("action.delete")}
               </Button>

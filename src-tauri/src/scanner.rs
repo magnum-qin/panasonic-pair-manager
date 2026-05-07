@@ -56,7 +56,11 @@ pub fn scan_root(db: &Database, root_path: PathBuf) -> Result<ScanSummary, ScanE
 pub fn build_groups(root_path: &Path) -> Vec<ScannedGroup> {
     let mut grouped: BTreeMap<(PathBuf, String), Vec<ScannedFile>> = BTreeMap::new();
 
-    for entry in WalkDir::new(root_path).follow_links(false).into_iter().flatten() {
+    for entry in WalkDir::new(root_path)
+        .follow_links(false)
+        .into_iter()
+        .flatten()
+    {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -221,8 +225,12 @@ mod tests {
         let groups = build_groups(dir.path());
 
         assert_eq!(groups.len(), 2);
-        assert!(groups.iter().any(|group| group.raw_count == 1 && group.jpg_count == 0));
-        assert!(groups.iter().any(|group| group.raw_count == 0 && group.jpg_count == 1));
+        assert!(groups
+            .iter()
+            .any(|group| group.raw_count == 1 && group.jpg_count == 0));
+        assert!(groups
+            .iter()
+            .any(|group| group.raw_count == 0 && group.jpg_count == 1));
     }
 
     #[test]
@@ -230,8 +238,22 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::create_dir_all(dir.path().join("DCIM").join("103_PANA")).unwrap();
         fs::create_dir_all(dir.path().join("DCIM").join("104_PANA")).unwrap();
-        fs::write(dir.path().join("DCIM").join("103_PANA").join("P1000001.RW2"), b"raw").unwrap();
-        fs::write(dir.path().join("DCIM").join("104_PANA").join("P1000002.JPG"), b"jpg").unwrap();
+        fs::write(
+            dir.path()
+                .join("DCIM")
+                .join("103_PANA")
+                .join("P1000001.RW2"),
+            b"raw",
+        )
+        .unwrap();
+        fs::write(
+            dir.path()
+                .join("DCIM")
+                .join("104_PANA")
+                .join("P1000002.JPG"),
+            b"jpg",
+        )
+        .unwrap();
 
         let groups = build_groups(dir.path());
 

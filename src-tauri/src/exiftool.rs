@@ -115,7 +115,8 @@ fn read_jpg_metadata(path: &Path) -> Result<Metadata, String> {
     let mut metadata = Metadata {
         capture_time: field_text(&exif, exif::Tag::DateTimeOriginal),
         camera_model: field_text(&exif, exif::Tag::Model),
-        lens: field_text(&exif, exif::Tag::LensModel).or_else(|| field_text(&exif, exif::Tag::LensSpecification)),
+        lens: field_text(&exif, exif::Tag::LensModel)
+            .or_else(|| field_text(&exif, exif::Tag::LensSpecification)),
         width: field_u32(&exif, exif::Tag::PixelXDimension)
             .or_else(|| field_u32(&exif, exif::Tag::ImageWidth)),
         height: field_u32(&exif, exif::Tag::PixelYDimension)

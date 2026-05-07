@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, LogicalSize, Manager, Size, State};
 
 struct AppState {
     db: Database,
@@ -57,7 +57,10 @@ fn list_photo_groups(
 }
 
 #[tauri::command]
-fn count_photo_groups(state: State<'_, AppState>, filter: PhotoGroupFilter) -> Result<usize, String> {
+fn count_photo_groups(
+    state: State<'_, AppState>,
+    filter: PhotoGroupFilter,
+) -> Result<usize, String> {
     state
         .db
         .count_photo_groups(&filter)
@@ -69,6 +72,14 @@ fn get_scan_summary(state: State<'_, AppState>, root_path: String) -> Result<Sca
     state
         .db
         .scan_summary_for_root(&root_path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn has_scan_for_root(state: State<'_, AppState>, root_path: String) -> Result<bool, String> {
+    state
+        .db
+        .has_scan_for_root(&root_path)
         .map_err(|error| error.to_string())
 }
 
@@ -95,7 +106,12 @@ async fn get_photo_thumbnail(
             .files
             .iter()
             .find(|file| matches!(file.kind, FileKind::Jpg))
-            .or_else(|| detail.files.iter().find(|file| matches!(file.kind, FileKind::Raw)))
+            .or_else(|| {
+                detail
+                    .files
+                    .iter()
+                    .find(|file| matches!(file.kind, FileKind::Raw))
+            })
         else {
             return Ok(None);
         };
@@ -126,6 +142,9 @@ async fn get_photo_thumbnail(
         if write_embedded_thumbnail(&source, &cache_path).is_ok() {
             return Ok(Some(cache_path.to_string_lossy().to_string()));
         }
+        if write_exiftool_preview(&source, &cache_path).is_ok() {
+            return Ok(Some(cache_path.to_string_lossy().to_string()));
+        }
 
         if !matches!(file.kind, FileKind::Jpg) {
             return Ok(None);
@@ -151,6 +170,27 @@ async fn get_photo_thumbnail(
     .map_err(|error| error.to_string())?
 }
 
+fn write_exiftool_preview(source: &PathBuf, cache_path: &PathBuf) -> Result<(), String> {
+    for tag in ["PreviewImage", "JpgFromRaw", "ThumbnailImage"] {
+        let output = Command::new("exiftool")
+            .arg("-b")
+            .arg(format!("-{tag}"))
+            .arg(source)
+            .output()
+            .map_err(|error| error.to_string())?;
+
+        if !output.status.success() || output.stdout.len() < 256 {
+            continue;
+        }
+        if !output.stdout.starts_with(&[0xff, 0xd8, 0xff]) {
+            continue;
+        }
+        std::fs::write(cache_path, output.stdout).map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    Err("ExifTool did not return a JPEG preview.".to_string())
+}
+
 fn write_embedded_thumbnail(source: &PathBuf, cache_path: &PathBuf) -> Result<(), String> {
     let file = File::open(source).map_err(|error| error.to_string())?;
     let mut reader = BufReader::new(file);
@@ -158,7 +198,8 @@ fn write_embedded_thumbnail(source: &PathBuf, cache_path: &PathBuf) -> Result<()
         .read_from_container(&mut reader)
         .map_err(|error| error.to_string())?;
     let offset = exif_long(&exif, exif::Tag::JPEGInterchangeFormat, exif::In::THUMBNAIL)
-        .ok_or_else(|| "embedded thumbnail offset not found".to_string())? as usize;
+        .ok_or_else(|| "embedded thumbnail offset not found".to_string())?
+        as usize;
     let length = exif_long(
         &exif,
         exif::Tag::JPEGInterchangeFormatLength,
@@ -205,7 +246,12 @@ async fn get_photo_group_metadata(
             .files
             .iter()
             .find(|file| matches!(file.kind, FileKind::Jpg))
-            .or_else(|| detail.files.iter().find(|file| matches!(file.kind, FileKind::Raw)))
+            .or_else(|| {
+                detail
+                    .files
+                    .iter()
+                    .find(|file| matches!(file.kind, FileKind::Raw))
+            })
             .or_else(|| detail.files.first());
 
         let Some(source) = source else {
@@ -279,7 +325,12 @@ async fn open_photo_group(state: State<'_, AppState>, id: String) -> Result<Stri
             .files
             .iter()
             .find(|file| matches!(file.kind, FileKind::Jpg))
-            .or_else(|| detail.files.iter().find(|file| matches!(file.kind, FileKind::Raw)))
+            .or_else(|| {
+                detail
+                    .files
+                    .iter()
+                    .find(|file| matches!(file.kind, FileKind::Raw))
+            })
             .ok_or_else(|| "No photo file found for this group.".to_string())?;
         open_path(&file.path)?;
         Ok(file.path.clone())
@@ -346,7 +397,10 @@ fn drive_signature(candidates: &[DriveCandidate]) -> Vec<String> {
     paths
 }
 
-fn emit_removable_roots_if_changed(app: &tauri::AppHandle, last_signature: &Arc<Mutex<Vec<String>>>) {
+fn emit_removable_roots_if_changed(
+    app: &tauri::AppHandle,
+    last_signature: &Arc<Mutex<Vec<String>>>,
+) {
     let candidates = drives::list_removable_roots();
     let signature = drive_signature(&candidates);
     let Ok(mut last_signature) = last_signature.lock() else {
@@ -365,12 +419,36 @@ fn start_removable_roots_monitor(app: tauri::AppHandle) {
     #[cfg(target_os = "windows")]
     start_windows_device_change_listener(app.clone(), last_signature.clone());
 
-    tauri::async_runtime::spawn_blocking(move || {
-        loop {
-            std::thread::sleep(Duration::from_secs(60));
-            emit_removable_roots_if_changed(&app, &last_signature);
-        }
+    tauri::async_runtime::spawn_blocking(move || loop {
+        std::thread::sleep(Duration::from_secs(60));
+        emit_removable_roots_if_changed(&app, &last_signature);
     });
+}
+
+fn fit_main_window_to_monitor(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+
+    let scale = monitor.scale_factor().max(1.0);
+    let size = monitor.size();
+    let logical_width = size.width as f64 / scale;
+    let logical_height = size.height as f64 / scale;
+    let max_width = (logical_width - 64.0).max(760.0);
+    let max_height = (logical_height - 104.0).max(460.0);
+    let width = 1180.0_f64.min(max_width).max(860.0_f64.min(max_width));
+    let height = 680.0_f64.min(max_height).max(520.0_f64.min(max_height));
+
+    let _ = window.set_size(Size::Logical(LogicalSize { width, height }));
+    let _ = window.center();
 }
 
 #[cfg(target_os = "windows")]
@@ -489,6 +567,7 @@ pub fn run() {
                 thumbnail_dir,
                 thumbnail_lock: Arc::new(Mutex::new(())),
             });
+            fit_main_window_to_monitor(app.handle());
             start_removable_roots_monitor(app.handle().clone());
             Ok(())
         })
@@ -498,6 +577,7 @@ pub fn run() {
             list_photo_groups,
             count_photo_groups,
             get_scan_summary,
+            has_scan_for_root,
             get_photo_group,
             get_photo_thumbnail,
             get_photo_group_metadata,
