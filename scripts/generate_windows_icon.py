@@ -126,7 +126,7 @@ def artwork_alpha_mask(image: Image.Image) -> Image.Image:
     return filled.filter(ImageFilter.GaussianBlur(1.1)).point(lambda value: 0 if value < 10 else value)
 
 
-def extract_artwork(source: Image.Image) -> Image.Image:
+def extract_artwork(source: Image.Image, compact: bool = False) -> Image.Image:
     rgba = source.convert("RGBA")
     alpha = artwork_alpha_mask(source)
     rgba.putalpha(alpha)
@@ -141,8 +141,27 @@ def extract_artwork(source: Image.Image) -> Image.Image:
     if not bbox:
         raise RuntimeError("Source icon appears to be empty after background removal.")
 
-    left, top, right, bottom = bbox
-    padding = round(max(right - left, bottom - top) * 0.06)
+    if compact:
+        width, height = rgba.size
+        # Tighten the small-size artwork around the high-contrast foreground:
+        # photo mark, link mark, and SD card. The full document stack is too
+        # detailed for taskbar-scale rendering.
+        left = round(width * 0.22)
+        top = round(height * 0.28)
+        right = round(width * 0.84)
+        bottom = round(height * 0.78)
+        compact_alpha = alpha.crop((left, top, right, bottom))
+        compact_bbox = compact_alpha.getbbox()
+        if compact_bbox:
+            cl, ct, cr, cb = compact_bbox
+            left += cl
+            top += ct
+            right = left - cl + cr
+            bottom = top - ct + cb
+    else:
+        left, top, right, bottom = bbox
+
+    padding = round(max(right - left, bottom - top) * (0.015 if compact else 0.035))
     left = max(0, left - padding)
     top = max(0, top - padding)
     right = min(rgba.width, right + padding)
@@ -155,7 +174,7 @@ def compose_icon(artwork: Image.Image, size: int) -> Image.Image:
     canvas_size = size * supersample
     canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
 
-    inset_ratio = 0.08 if size >= 64 else 0.04
+    inset_ratio = 0.055 if size >= 128 else 0.015 if size >= 48 else 0
     target = round(canvas_size * (1 - inset_ratio * 2))
     fitted = ImageOps.contain(artwork, (target, target), method=Image.Resampling.LANCZOS)
     x = (canvas_size - fitted.width) // 2
@@ -209,7 +228,11 @@ def main() -> None:
     ICON_DIR.mkdir(parents=True, exist_ok=True)
     source = Image.open(SOURCE_PATH)
     artwork = extract_artwork(source)
-    images = {size: compose_icon(artwork, size) for size in ICON_SIZES}
+    compact_artwork = extract_artwork(source, compact=True)
+    images = {
+        size: compose_icon(compact_artwork if size <= 64 else artwork, size)
+        for size in ICON_SIZES
+    }
 
     images[256].save(PNG_PATH)
     images[256].save(ICO_PATH, format="ICO", sizes=[(size, size) for size in ICON_SIZES])
