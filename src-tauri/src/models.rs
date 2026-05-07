@@ -117,6 +117,23 @@ pub struct ScanSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct ScanProgress {
+    pub root_path: String,
+    pub scanned_files: usize,
+    pub matched_files: usize,
+    pub current_dir: String,
+    pub done: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbnailCacheStats {
+    pub files: usize,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteSummary {
     pub groups: usize,
     pub files: usize,

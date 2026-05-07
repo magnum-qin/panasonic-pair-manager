@@ -72,6 +72,19 @@ export interface ScanSummary {
   jpgOnlyGroups: number;
 }
 
+export interface ScanProgress {
+  rootPath: string;
+  scannedFiles: number;
+  matchedFiles: number;
+  currentDir: string;
+  done: boolean;
+}
+
+export interface ThumbnailCacheStats {
+  files: number;
+  bytes: number;
+}
+
 export interface DeleteSummary {
   groups: number;
   files: number;

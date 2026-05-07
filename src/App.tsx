@@ -37,10 +37,12 @@ import {
 } from "react";
 import {
   countPhotoGroups,
+  clearThumbnailCache,
   deletePhotoGroups,
   getPhotoGroup,
   getPhotoGroupMetadata,
   getScanSummary,
+  getThumbnailCacheStats,
   hasScanForRoot,
   listPhotoGroups,
   listRemovableRoots,
@@ -64,7 +66,7 @@ import {
   type TranslationKey,
 } from "./i18n";
 import { THEME_OPTIONS, normalizeTheme, type ThemeCode } from "./theme-options";
-import type { DriveCandidate, GroupKindFilter, PhotoGroup, PhotoGroupFilter, ScanSummary } from "./types";
+import type { DriveCandidate, GroupKindFilter, PhotoGroup, PhotoGroupFilter, ScanProgress, ScanSummary } from "./types";
 import { fileName, formatBytes, PAGE_SIZE } from "./utils";
 
 const CARD_SIZE_PRESETS = [
@@ -152,6 +154,7 @@ export default function App() {
     y: number;
   } | null>(null);
   const [manualRoots, setManualRoots] = useState<string[]>(loadStoredManualRoots);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [cardSize, setCardSize] = useState(() => {
     const stored = Number(window.localStorage.getItem("ppm.cardSize"));
     return Number.isFinite(stored) ? nearestCardSizePreset(stored) : 230;
@@ -159,6 +162,7 @@ export default function App() {
   const deferredQuery = useDeferredValue(query);
   const selectionModeRef = useRef(selectionMode);
   const activeByRootRef = useRef<Record<string, string>>({});
+  const selectionAnchorRef = useRef<string>("");
   const knownDrivePathsRef = useRef<Set<string>>(new Set());
   const seenRemovablePathsRef = useRef<Set<string>>(new Set());
   const refreshTimerRef = useRef<number | undefined>(undefined);
@@ -251,6 +255,19 @@ export default function App() {
     queryKey: ["root-scan-state", rootPath],
   });
 
+  const thumbnailCacheQuery = useQuery({
+    queryFn: getThumbnailCacheStats,
+    queryKey: ["thumbnail-cache-stats"],
+  });
+
+  const manualAvailabilityQueries = useQueries({
+    queries: manualRoots.map((path) => ({
+      queryFn: () => pathExists(path),
+      queryKey: ["path-exists", path],
+      refetchInterval: 10_000,
+    })),
+  });
+
   const groups = useMemo(
     () => groupsQuery.data?.pages.flatMap((page) => page.slice(0, PAGE_SIZE)) ?? [],
     [groupsQuery.data],
@@ -273,6 +290,16 @@ export default function App() {
     queryFn: listRemovableRoots,
     queryKey: ["removable-roots"],
     refetchInterval: 30_000,
+  });
+
+  const clearThumbnailCacheMutation = useMutation({
+    mutationFn: clearThumbnailCache,
+    onSuccess: (stats) => {
+      queryClient.setQueryData(["thumbnail-cache-stats"], stats);
+      queryClient.removeQueries({ queryKey: ["photo-thumbnail"] });
+      setMessage(t("status.thumbnailCacheCleared"));
+    },
+    onError: (error) => setMessage(String(error)),
   });
 
   useEffect(() => {
@@ -298,9 +325,36 @@ export default function App() {
     };
   }, [queryClient, rootPath]);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    listen<ScanProgress>("scan-progress", (event) => {
+      setScanProgress(event.payload);
+    }).then((nextUnlisten) => {
+      if (cancelled) {
+        nextUnlisten();
+        return;
+      }
+      unlisten = nextUnlisten;
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   const scanMutation = useMutation({
     mutationFn: scanRoot,
-    onMutate: () => {
+    onMutate: (path) => {
+      setScanProgress({
+        rootPath: path,
+        scannedFiles: 0,
+        matchedFiles: 0,
+        currentDir: path,
+        done: false,
+      });
       setMessage(t("status.scanning"));
     },
     onSuccess: async (summary) => {
@@ -315,7 +369,10 @@ export default function App() {
       await queryClient.invalidateQueries({ queryKey: ["scan-summary", summary.rootPath] });
       setMessage(t("status.scanCompleted", { groups: summary.groups, files: summary.files }));
     },
-    onError: (error) => setMessage(String(error)),
+    onError: (error) => {
+      setScanProgress(null);
+      setMessage(String(error));
+    },
   });
 
   const deleteMutation = useMutation({
@@ -343,40 +400,85 @@ export default function App() {
   const busy = scanning || deleting;
   const detectedRoots = drivesQuery.data ?? [];
   const manualRootSet = useMemo(() => new Set(manualRoots), [manualRoots]);
+  const manualAvailability = useMemo(
+    () =>
+      new Map(
+        manualRoots.map((path, index) => [
+          path,
+          manualAvailabilityQueries[index]?.data,
+        ]),
+      ),
+    [manualAvailabilityQueries, manualRoots],
+  );
   const rootIsAvailable = !rootPath || rootAvailableQuery.data !== false;
-  const hasSource = Boolean(rootPath) && rootIsAvailable;
-  const visibleGroups = hasSource ? groups : [];
-  const visibleHasMoreGroups = hasSource ? hasMoreGroups : false;
+  const hasSource = Boolean(rootPath);
+  const activeSourceIsManual = Boolean(rootPath && manualRootSet.has(rootPath));
+  const activeSourceIsRemovable = Boolean(rootPath && detectedRoots.some((drive) => drive.scanPath === rootPath));
+  const visibleGroups = hasSource && rootIsAvailable ? groups : [];
+  const visibleHasMoreGroups = hasSource && rootIsAvailable ? hasMoreGroups : false;
   const currentSummary =
     hasSource ? (summaryQuery.data ?? (scanSummary?.rootPath === rootPath ? scanSummary : null)) : null;
   const visibleGroupCount = hasSource ? (groupCountQuery.data ?? visibleGroups.length) : 0;
   const sourceWasScanned = rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
   const selectedDrive = detectedRoots.find((drive) => drive.scanPath === rootPath);
   const sourceName = selectedDrive?.displayName ?? (rootPath ? fileName(rootPath) || rootPath : "");
+  const scanProgressText =
+    scanning && scanProgress?.rootPath === rootPath
+      ? t("status.scanProgress", {
+          scanned: scanProgress.scannedFiles,
+          matched: scanProgress.matchedFiles,
+          dir: fileName(scanProgress.currentDir) || scanProgress.currentDir,
+        })
+      : "";
+  const statusMessage = scanProgressText || message;
   const emptyState = useMemo(() => {
+    if (hasSource && !rootIsAvailable) {
+      return {
+        title: t("empty.sourceOfflineTitle"),
+        description: activeSourceIsManual
+          ? t("empty.fixedOfflineDescription")
+          : t("empty.removableOfflineDescription"),
+      };
+    }
     if (scanning && rootPath) {
       return {
         title: t("empty.scanningTitle", { name: sourceName || rootPath }),
-        description: t("empty.scanningDescription"),
+        description: scanProgressText || t("empty.scanningDescription"),
       };
     }
     if (hasSource && !sourceWasScanned) {
       return {
         title: t("empty.unscannedTitle"),
-        description: t("empty.unscannedDescription"),
+        description: activeSourceIsRemovable
+          ? t("empty.unscannedRemovableDescription")
+          : t("empty.unscannedDescription"),
       };
     }
     if (hasSource && sourceWasScanned) {
       return {
         title: t("empty.noGroups"),
-        description: t("empty.noGroupsInSource"),
+        description: activeSourceIsRemovable
+          ? t("empty.noGroupsInRemovable")
+          : t("empty.noGroupsInSource"),
       };
     }
     return {
       title: t("empty.waiting"),
       description: t("empty.waitingDescription"),
     };
-  }, [hasSource, rootPath, rootScanQuery.data, scanning, sourceName, sourceWasScanned, t]);
+  }, [
+    activeSourceIsManual,
+    activeSourceIsRemovable,
+    hasSource,
+    rootIsAvailable,
+    rootPath,
+    rootScanQuery.data,
+    scanProgressText,
+    scanning,
+    sourceName,
+    sourceWasScanned,
+    t,
+  ]);
   const modalOpen = aboutOpen || settingsOpen || deleteOpen;
   const selectedGroups = useMemo(
     () => visibleGroups.filter((group) => selected.has(group.id)),
@@ -468,6 +570,7 @@ export default function App() {
   );
 
   const toggleSelected = useCallback((id: string) => {
+    selectionAnchorRef.current = id;
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -489,14 +592,27 @@ export default function App() {
   );
 
   const activateOrSelect = useCallback(
-    (id: string) => {
+    (id: string, range = false) => {
       if (selectionModeRef.current) {
+        if (range && selectionAnchorRef.current) {
+          const start = visibleGroups.findIndex((group) => group.id === selectionAnchorRef.current);
+          const end = visibleGroups.findIndex((group) => group.id === id);
+          if (start >= 0 && end >= 0) {
+            const [from, to] = start < end ? [start, end] : [end, start];
+            setSelected((current) => {
+              const next = new Set(current);
+              visibleGroups.slice(from, to + 1).forEach((group) => next.add(group.id));
+              return next;
+            });
+            return;
+          }
+        }
         toggleSelected(id);
       } else {
         rememberActiveGroup(id);
       }
     },
-    [rememberActiveGroup, toggleSelected],
+    [rememberActiveGroup, toggleSelected, visibleGroups],
   );
 
   const applyKindFilter = useCallback((nextKind: GroupKindFilter) => {
@@ -579,6 +695,25 @@ export default function App() {
   }, [selectionMode]);
 
   useEffect(() => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      const target = event.target;
+      const isEditable =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable);
+      if (isEditable || !hasSource || !visibleGroups.length) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        setSelectionMode(true);
+        setSelected(new Set(visibleGroups.map((group) => group.id)));
+        selectionAnchorRef.current = visibleGroups[0].id;
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [hasSource, visibleGroups]);
+
+  useEffect(() => {
     return () => window.clearTimeout(refreshTimerRef.current);
   }, []);
 
@@ -612,11 +747,6 @@ export default function App() {
     if (hasSource) return;
     clearActiveSource();
   }, [clearActiveSource, hasSource]);
-
-  useEffect(() => {
-    if (rootAvailableQuery.data !== false) return;
-    clearActiveSource(t("source.offline"));
-  }, [clearActiveSource, rootAvailableQuery.data, t]);
 
   useEffect(() => {
     setInspectorTab("info");
@@ -662,7 +792,7 @@ export default function App() {
       <div className="toolbar">
         {hasSource && (
           <>
-            <ToolbarButton disabled={scanning || deleting} onClick={() => scan()}>
+            <ToolbarButton disabled={scanning || deleting || !rootIsAvailable} onClick={() => scan()}>
               <RefreshCw size={17} /> {t("action.rescan")}
             </ToolbarButton>
             <ToolbarButton
@@ -747,7 +877,12 @@ export default function App() {
                     onClear={() => clearManualRoot(path)}
                     onClick={() => selectManualRoot(path)}
                     removeLabel={t("source.removeFolder")}
-                    subtitle={path}
+                    subtitle={
+                      manualAvailability.get(path) === false
+                        ? `${path} · ${t("source.unavailable")}`
+                        : path
+                    }
+                    tone={manualAvailability.get(path) === false ? "offline" : undefined}
                   />
                 ))
               ) : (
@@ -966,7 +1101,7 @@ export default function App() {
       <footer className="statusbar">
         <div className="status-message">
           <CheckCircle2 size={16} />
-          <span>{message}</span>
+          <span>{statusMessage}</span>
         </div>
         <div className="status-actions">
           <button
@@ -1080,6 +1215,22 @@ export default function App() {
                   ))}
                 </Select>
               </label>
+              <div className="setting-row">
+                <span>{t("setting.thumbnailCache")}</span>
+                <div className="setting-inline">
+                  <strong>
+                    {formatBytes(thumbnailCacheQuery.data?.bytes ?? 0)}
+                    {" / "}
+                    {t("setting.cacheFiles", { count: thumbnailCacheQuery.data?.files ?? 0 })}
+                  </strong>
+                  <Button
+                    disabled={clearThumbnailCacheMutation.isPending}
+                    onClick={() => clearThumbnailCacheMutation.mutate()}
+                  >
+                    {t("setting.clearCache")}
+                  </Button>
+                </div>
+              </div>
             </div>
             <div className="modal-actions">
               <Button onClick={closeSettings}>{t("action.close")}</Button>

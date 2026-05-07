@@ -7,6 +7,7 @@ import type {
   PhotoGroupFilter,
   PhotoGroupMetadata,
   ScanSummary,
+  ThumbnailCacheStats,
 } from "./types";
 
 export function selectRootFolder() {
@@ -39,6 +40,14 @@ export function getPhotoGroup(id: string) {
 
 export function getPhotoThumbnail(id: string, maxSize: number) {
   return invoke<string | null>("get_photo_thumbnail", { id, maxSize });
+}
+
+export function getThumbnailCacheStats() {
+  return invoke<ThumbnailCacheStats>("get_thumbnail_cache_stats");
+}
+
+export function clearThumbnailCache() {
+  return invoke<ThumbnailCacheStats>("clear_thumbnail_cache");
 }
 
 export function getPhotoGroupMetadata(id: string) {

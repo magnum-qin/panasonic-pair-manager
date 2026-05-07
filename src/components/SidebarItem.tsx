@@ -11,6 +11,7 @@ export function SidebarItem({
   onClick,
   removeLabel = "Remove folder",
   subtitle,
+  tone,
 }: {
   active?: boolean;
   disabled?: boolean;
@@ -20,12 +21,13 @@ export function SidebarItem({
   onClick?: () => void;
   removeLabel?: string;
   subtitle: string;
+  tone?: "offline";
 }) {
   const pointerHandledRef = useRef(false);
 
   return (
     <ButtonBase
-      className={`source-card ${active ? "active" : ""}`}
+      className={`source-card ${active ? "active" : ""} ${tone === "offline" ? "offline" : ""}`}
       component="div"
       disabled={disabled}
       onClick={() => {

@@ -24,14 +24,14 @@ export const PhotoCard = memo(function PhotoCard({
   isSelected: boolean;
   noPreviewLabel: string;
   thumbnailSize: number;
-  onActivate: (id: string) => void;
+  onActivate: (id: string, range?: boolean) => void;
   onContextMenu: (group: PhotoGroup, x: number, y: number) => void;
   onOpen: (id: string) => void;
   onToggle: (id: string) => void;
 }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const thumbnailQuery = useQuery({
-    enabled: Boolean(group.previewPath),
+    enabled: group.jpgCount > 0 || group.rawCount > 0,
     queryFn: () => getPhotoThumbnail(group.id, thumbnailSize),
     queryKey: ["photo-thumbnail", group.id, thumbnailSize],
     staleTime: Number.POSITIVE_INFINITY,
@@ -42,8 +42,8 @@ export const PhotoCard = memo(function PhotoCard({
     setImageLoaded(Boolean(thumbnailPath && loadedThumbnailPaths.has(thumbnailPath)));
   }, [thumbnailPath]);
 
-  const handlePrimaryAction = () => {
-    onActivate(group.id);
+  const handlePrimaryAction = (range?: boolean) => {
+    onActivate(group.id, range);
   };
 
   return (
@@ -69,7 +69,7 @@ export const PhotoCard = memo(function PhotoCard({
         className="photo-card-action"
         aria-pressed={isActive || isSelected}
         aria-label={`${group.stem}, ${group.folderName}, ${formatBytes(group.totalSize)}`}
-        onClick={handlePrimaryAction}
+        onClick={(event) => handlePrimaryAction(event.shiftKey)}
         onContextMenu={(event: MouseEvent<HTMLButtonElement>) => {
           event.preventDefault();
           event.stopPropagation();
@@ -82,7 +82,7 @@ export const PhotoCard = memo(function PhotoCard({
           onOpen(group.id);
         }}
       >
-        <div className={`thumb ${group.previewPath && !imageLoaded ? "loading" : ""}`}>
+        <div className={`thumb ${(group.previewPath || group.rawCount > 0) && !imageLoaded ? "loading" : ""}`}>
           {thumbnailPath ? (
             <img
               className={imageLoaded ? "loaded" : ""}
@@ -96,7 +96,7 @@ export const PhotoCard = memo(function PhotoCard({
                 setImageLoaded(true);
               }}
             />
-          ) : group.previewPath && thumbnailQuery.isFetching ? (
+          ) : (group.previewPath || group.rawCount > 0) && thumbnailQuery.isFetching ? (
             <div className="thumb-pending" aria-label="Loading thumbnail" />
           ) : (
             <div className="no-preview">

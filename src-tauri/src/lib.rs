@@ -11,9 +11,10 @@ use image::codecs::jpeg::JpegEncoder;
 use image::ImageReader;
 use models::{
     DeleteSummary, DriveCandidate, FileKind, PhotoGroup, PhotoGroupDetail, PhotoGroupFilter,
-    PhotoGroupMetadata, PhotoMetadataItem, ScanSummary,
+    PhotoGroupMetadata, PhotoMetadataItem, ScanSummary, ThumbnailCacheStats,
 };
 use sha1::{Digest, Sha1};
+use std::fs;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::PathBuf;
@@ -28,6 +29,8 @@ struct AppState {
     thumbnail_lock: Arc<Mutex<()>>,
 }
 
+const THUMBNAIL_CACHE_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
+
 #[tauri::command]
 fn select_root_folder() -> Option<String> {
     rfd::FileDialog::new()
@@ -37,12 +40,20 @@ fn select_root_folder() -> Option<String> {
 }
 
 #[tauri::command]
-async fn scan_root(state: State<'_, AppState>, path: String) -> Result<ScanSummary, String> {
+async fn scan_root(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<ScanSummary, String> {
     let db = state.db.clone();
-    tauri::async_runtime::spawn_blocking(move || scanner::scan_root(&db, PathBuf::from(path)))
-        .await
-        .map_err(|error| error.to_string())?
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        scanner::scan_root_with_progress(&db, PathBuf::from(path), |progress| {
+            let _ = app_handle.emit("scan-progress", progress);
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -168,6 +179,88 @@ async fn get_photo_thumbnail(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn get_thumbnail_cache_stats(
+    state: State<'_, AppState>,
+) -> Result<ThumbnailCacheStats, String> {
+    let thumbnail_dir = state.thumbnail_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || thumbnail_cache_stats(&thumbnail_dir))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn clear_thumbnail_cache(state: State<'_, AppState>) -> Result<ThumbnailCacheStats, String> {
+    let thumbnail_dir = state.thumbnail_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if thumbnail_dir.exists() {
+            for entry in fs::read_dir(&thumbnail_dir).map_err(|error| error.to_string())? {
+                let entry = entry.map_err(|error| error.to_string())?;
+                let path = entry.path();
+                if path.is_file() {
+                    let _ = fs::remove_file(path);
+                }
+            }
+        }
+        thumbnail_cache_stats(&thumbnail_dir)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn thumbnail_cache_stats(thumbnail_dir: &PathBuf) -> Result<ThumbnailCacheStats, String> {
+    let mut stats = ThumbnailCacheStats::default();
+    if !thumbnail_dir.exists() {
+        return Ok(stats);
+    }
+
+    for entry in fs::read_dir(thumbnail_dir).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let metadata = entry.metadata().map_err(|error| error.to_string())?;
+        if !metadata.is_file() {
+            continue;
+        }
+        stats.files += 1;
+        stats.bytes += metadata.len();
+    }
+    Ok(stats)
+}
+
+fn enforce_thumbnail_cache_limit(thumbnail_dir: &PathBuf, limit_bytes: u64) -> Result<(), String> {
+    if !thumbnail_dir.exists() {
+        return Ok(());
+    }
+
+    let mut entries = Vec::new();
+    let mut total = 0u64;
+    for entry in fs::read_dir(thumbnail_dir).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let metadata = entry.metadata().map_err(|error| error.to_string())?;
+        if !metadata.is_file() {
+            continue;
+        }
+        let modified = metadata.modified().ok();
+        let size = metadata.len();
+        total += size;
+        entries.push((entry.path(), modified, size));
+    }
+
+    if total <= limit_bytes {
+        return Ok(());
+    }
+
+    entries.sort_by_key(|(_, modified, _)| *modified);
+    for (path, _, size) in entries {
+        if total <= limit_bytes {
+            break;
+        }
+        if fs::remove_file(path).is_ok() {
+            total = total.saturating_sub(size);
+        }
+    }
+    Ok(())
 }
 
 fn write_exiftool_preview(source: &PathBuf, cache_path: &PathBuf) -> Result<(), String> {
@@ -560,6 +653,7 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir)?;
             let thumbnail_dir = app_dir.join("thumbnails");
             std::fs::create_dir_all(&thumbnail_dir)?;
+            let _ = enforce_thumbnail_cache_limit(&thumbnail_dir, THUMBNAIL_CACHE_LIMIT_BYTES);
             let db = Database::new(app_dir.join("library.sqlite3"))?;
             db.migrate()?;
             app.manage(AppState {
@@ -580,6 +674,8 @@ pub fn run() {
             has_scan_for_root,
             get_photo_group,
             get_photo_thumbnail,
+            get_thumbnail_cache_stats,
+            clear_thumbnail_cache,
             get_photo_group_metadata,
             delete_photo_groups,
             open_photo_group,

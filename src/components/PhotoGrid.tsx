@@ -61,7 +61,7 @@ export function PhotoGrid({
   loadingMoreLabel: string;
   minCardWidth: number;
   noPreviewLabel: string;
-  onActivate: (id: string) => void;
+  onActivate: (id: string, range?: boolean) => void;
   onContextMenu: (group: PhotoGroup, x: number, y: number) => void;
   onEmptyAction?: () => void;
   onLoadMore: () => void;

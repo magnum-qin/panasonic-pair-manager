@@ -54,11 +54,16 @@ export type TranslationKey =
   | "empty.inspectorTitle"
   | "empty.noExif"
   | "empty.noGroups"
+  | "empty.noGroupsInRemovable"
   | "empty.noGroupsInSource"
   | "empty.noPreview"
   | "empty.scanningDescription"
   | "empty.scanningTitle"
+  | "empty.fixedOfflineDescription"
+  | "empty.removableOfflineDescription"
+  | "empty.sourceOfflineTitle"
   | "empty.unscannedDescription"
+  | "empty.unscannedRemovableDescription"
   | "empty.unscannedTitle"
   | "empty.waiting"
   | "empty.waitingDescription"
@@ -78,8 +83,11 @@ export type TranslationKey =
   | "metadata.sourceEmpty"
   | "metadata.unknown"
   | "setting.language"
+  | "setting.cacheFiles"
+  | "setting.clearCache"
   | "setting.open"
   | "setting.theme"
+  | "setting.thumbnailCache"
   | "setting.title"
   | "size.card"
   | "size.presets"
@@ -98,6 +106,7 @@ export type TranslationKey =
   | "source.removableDevices"
   | "source.removableRemoved"
   | "source.selectedManual"
+  | "source.unavailable"
   | "summary.scan"
   | "status.detectedCached"
   | "status.detectedIndexing"
@@ -105,7 +114,9 @@ export type TranslationKey =
   | "status.opening"
   | "status.ready"
   | "status.scanCompleted"
+  | "status.scanProgress"
   | "status.scanning"
+  | "status.thumbnailCacheCleared"
   | "status.deleted"
   | "status.deletedFailed";
 
@@ -133,7 +144,7 @@ const en: TranslationMap = {
   "common.dimensions": "Dimensions",
   "common.files": "Files",
   "common.folder": "Folder",
-  "common.groups": "Groups",
+  "common.groups": "Photos",
   "common.info": "Info",
   "common.lens": "Lens",
   "common.metadata": "Metadata",
@@ -156,11 +167,16 @@ const en: TranslationMap = {
   "empty.inspectorTitle": "No photo selected",
   "empty.noExif": "No embedded EXIF fields found.",
   "empty.noGroups": "No photo groups yet",
+  "empty.noGroupsInRemovable": "No RAW/JPG groups found on this SD card. Check that the card contains Panasonic DCIM folders, then rescan.",
   "empty.noGroupsInSource": "No RAW/JPG groups found in this source.",
   "empty.noPreview": "No JPG preview",
   "empty.scanningDescription": "Indexing this source now. Photos will appear here as soon as the scan completes.",
   "empty.scanningTitle": "Scanning {name}",
+  "empty.fixedOfflineDescription": "This pinned folder is offline or cannot be accessed. Reconnect the drive or remove the folder from the source list.",
+  "empty.removableOfflineDescription": "This removable device is no longer available. Insert the SD card again to continue.",
+  "empty.sourceOfflineTitle": "Source offline",
   "empty.unscannedDescription": "This source is selected but has no saved scan yet. Press Rescan to build the photo index.",
+  "empty.unscannedRemovableDescription": "This SD card is selected but has no saved scan yet. Press Rescan to index it.",
   "empty.unscannedTitle": "Source not scanned yet",
   "empty.waiting": "Waiting for photos",
   "empty.waitingDescription": "Insert an SD card, or choose a folder to start browsing photos.",
@@ -181,8 +197,11 @@ const en: TranslationMap = {
   "metadata.sourceEmpty": "No metadata source file.",
   "metadata.unknown": "Unknown",
   "setting.language": "Language",
+  "setting.cacheFiles": "{count} files",
+  "setting.clearCache": "Clear",
   "setting.open": "Settings",
   "setting.theme": "Theme",
+  "setting.thumbnailCache": "Thumbnail Cache",
   "setting.title": "Settings",
   "size.card": "Card Size",
   "size.presets": "Photo card size presets",
@@ -201,6 +220,7 @@ const en: TranslationMap = {
   "source.removableDevices": "Removable Devices",
   "source.removableRemoved": "Removable device removed.",
   "source.selectedManual": "{name} selected. Press Rescan to re-index files.",
+  "source.unavailable": "Offline",
   "summary.scan": "Scan Summary",
   "status.deleted": "Moved {count} files to Recycle Bin. {failed}",
   "status.deletedFailed": "{count} failed.",
@@ -210,7 +230,9 @@ const en: TranslationMap = {
   "status.opening": "Opening photo...",
   "status.ready": "Ready.",
   "status.scanCompleted": "Scan completed: {groups} groups, {files} files.",
+  "status.scanProgress": "Scanning {dir}: {scanned} files checked, {matched} photo files matched.",
   "status.scanning": "Scanning folders...",
+  "status.thumbnailCacheCleared": "Thumbnail cache cleared.",
 };
 
 const translations: Record<LanguageCode, TranslationMap> = {
@@ -230,7 +252,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "common.dimensions": "尺寸",
     "common.files": "文件",
     "common.folder": "文件夹",
-    "common.groups": "组",
+    "common.groups": "照片数量",
     "common.info": "信息",
     "common.lens": "镜头",
     "common.metadata": "元数据",
@@ -253,11 +275,16 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "empty.inspectorTitle": "未选择照片",
     "empty.noExif": "未找到嵌入的 EXIF 字段。",
     "empty.noGroups": "还没有照片组",
+    "empty.noGroupsInRemovable": "此 SD 卡中未找到 RAW/JPG 组。请确认卡内有 Panasonic DCIM 文件夹后重新扫描。",
     "empty.noGroupsInSource": "此来源中未找到 RAW/JPG 组。",
     "empty.noPreview": "没有 JPG 预览",
     "empty.scanningDescription": "正在为此来源建立索引。扫描完成后照片会显示在这里。",
     "empty.scanningTitle": "正在扫描 {name}",
+    "empty.fixedOfflineDescription": "这个固定文件夹离线或不可访问。请重新连接磁盘，或从来源列表中移除它。",
+    "empty.removableOfflineDescription": "这个移动设备已不可用。请重新插入 SD 卡后继续。",
+    "empty.sourceOfflineTitle": "来源离线",
     "empty.unscannedDescription": "此来源已选中，但还没有保存过扫描结果。点击重新扫描以建立照片索引。",
+    "empty.unscannedRemovableDescription": "此 SD 卡已选中，但还没有保存过扫描结果。点击重新扫描以建立索引。",
     "empty.unscannedTitle": "此来源尚未扫描",
     "empty.waiting": "等待照片",
     "empty.waitingDescription": "插入 SD 卡，或选择文件夹开始浏览照片。",
@@ -277,8 +304,11 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "metadata.sourceEmpty": "没有元数据来源文件。",
     "metadata.unknown": "未知",
     "setting.language": "语言",
+    "setting.cacheFiles": "{count} 个文件",
+    "setting.clearCache": "清理",
     "setting.open": "设置",
     "setting.theme": "主题配色",
+    "setting.thumbnailCache": "缩略图缓存",
     "setting.title": "设置",
     "size.card": "卡片大小",
     "size.presets": "照片卡片大小挡位",
@@ -297,6 +327,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "source.removableDevices": "移动设备",
     "source.removableRemoved": "移动设备已移除。",
     "source.selectedManual": "已选择 {name}。点击重新扫描以重新索引文件。",
+    "source.unavailable": "离线",
     "summary.scan": "扫描摘要",
     "status.deleted": "已将 {count} 个文件移到回收站。{failed}",
     "status.deletedFailed": "{count} 个失败。",
@@ -306,7 +337,9 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "status.opening": "正在打开照片...",
     "status.ready": "就绪。",
     "status.scanCompleted": "扫描完成：{groups} 组，{files} 个文件。",
+    "status.scanProgress": "正在扫描 {dir}：已检查 {scanned} 个文件，匹配 {matched} 个照片文件。",
     "status.scanning": "正在扫描文件夹...",
+    "status.thumbnailCacheCleared": "缩略图缓存已清理。",
   },
   "zh-TW": {
     ...en,
@@ -323,7 +356,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "common.dimensions": "尺寸",
     "common.files": "檔案",
     "common.folder": "資料夾",
-    "common.groups": "組",
+    "common.groups": "照片數量",
     "common.info": "資訊",
     "common.lens": "鏡頭",
     "common.metadata": "中繼資料",
@@ -346,11 +379,16 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "empty.inspectorTitle": "尚未選擇照片",
     "empty.noExif": "未找到嵌入的 EXIF 欄位。",
     "empty.noGroups": "尚無照片組",
+    "empty.noGroupsInRemovable": "此 SD 卡中未找到 RAW/JPG 組。請確認卡內有 Panasonic DCIM 資料夾後重新掃描。",
     "empty.noGroupsInSource": "此來源中未找到 RAW/JPG 組。",
     "empty.noPreview": "沒有 JPG 預覽",
     "empty.scanningDescription": "正在為此來源建立索引。掃描完成後照片會顯示在這裡。",
     "empty.scanningTitle": "正在掃描 {name}",
+    "empty.fixedOfflineDescription": "這個固定資料夾離線或無法存取。請重新連接磁碟，或從來源列表中移除它。",
+    "empty.removableOfflineDescription": "這個可移除裝置已不可用。請重新插入 SD 卡後繼續。",
+    "empty.sourceOfflineTitle": "來源離線",
     "empty.unscannedDescription": "此來源已選取，但還沒有儲存過掃描結果。點擊重新掃描以建立照片索引。",
+    "empty.unscannedRemovableDescription": "此 SD 卡已選取，但還沒有儲存過掃描結果。點擊重新掃描以建立索引。",
     "empty.unscannedTitle": "此來源尚未掃描",
     "empty.waiting": "等待照片",
     "empty.waitingDescription": "插入 SD 卡，或選擇資料夾開始瀏覽照片。",
@@ -370,8 +408,11 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "metadata.sourceEmpty": "沒有中繼資料來源檔案。",
     "metadata.unknown": "未知",
     "setting.language": "語言",
+    "setting.cacheFiles": "{count} 個檔案",
+    "setting.clearCache": "清理",
     "setting.open": "設定",
     "setting.theme": "主題配色",
+    "setting.thumbnailCache": "縮圖快取",
     "setting.title": "設定",
     "size.card": "卡片大小",
     "size.presets": "照片卡片大小檔位",
@@ -390,6 +431,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "source.removableDevices": "可移除裝置",
     "source.removableRemoved": "可移除裝置已移除。",
     "source.selectedManual": "已選擇 {name}。點擊重新掃描以重新索引檔案。",
+    "source.unavailable": "離線",
     "summary.scan": "掃描摘要",
     "status.deleted": "已將 {count} 個檔案移到資源回收筒。{failed}",
     "status.deletedFailed": "{count} 個失敗。",
@@ -399,7 +441,9 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "status.opening": "正在開啟照片...",
     "status.ready": "就緒。",
     "status.scanCompleted": "掃描完成：{groups} 組，{files} 個檔案。",
+    "status.scanProgress": "正在掃描 {dir}：已檢查 {scanned} 個檔案，匹配 {matched} 個照片檔案。",
     "status.scanning": "正在掃描資料夾...",
+    "status.thumbnailCacheCleared": "縮圖快取已清理。",
   },
   ja: {
     ...en,

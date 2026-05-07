@@ -1,5 +1,5 @@
 use crate::db::Database;
-use crate::models::{FileKind, ScanSummary};
+use crate::models::{FileKind, ScanProgress, ScanSummary};
 use sha1::{Digest, Sha1};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -42,19 +42,45 @@ pub enum ScanError {
     Database(#[from] rusqlite::Error),
 }
 
-pub fn scan_root(db: &Database, root_path: PathBuf) -> Result<ScanSummary, ScanError> {
+pub fn scan_root_with_progress<F>(
+    db: &Database,
+    root_path: PathBuf,
+    mut on_progress: F,
+) -> Result<ScanSummary, ScanError>
+where
+    F: FnMut(ScanProgress),
+{
     if !root_path.exists() {
         return Err(ScanError::MissingRoot(root_path.display().to_string()));
     }
 
-    let groups = build_groups(&root_path);
+    on_progress(ScanProgress {
+        root_path: root_path.to_string_lossy().to_string(),
+        scanned_files: 0,
+        matched_files: 0,
+        current_dir: root_path.to_string_lossy().to_string(),
+        done: false,
+    });
+    let groups = build_groups_with_progress(&root_path, &mut on_progress);
     let summary = summarize(&root_path, &groups);
     db.replace_root_scan(&root_path, &groups)?;
     Ok(summary)
 }
 
-pub fn build_groups(root_path: &Path) -> Vec<ScannedGroup> {
+#[cfg(test)]
+fn build_groups(root_path: &Path) -> Vec<ScannedGroup> {
+    build_groups_with_progress(root_path, &mut |_| {})
+}
+
+fn build_groups_with_progress<F>(root_path: &Path, on_progress: &mut F) -> Vec<ScannedGroup>
+where
+    F: FnMut(ScanProgress),
+{
     let mut grouped: BTreeMap<(PathBuf, String), Vec<ScannedFile>> = BTreeMap::new();
+    let root = root_path.to_string_lossy().to_string();
+    let mut scanned_files = 0usize;
+    let mut matched_files = 0usize;
+    let mut last_dir = root.clone();
 
     for entry in WalkDir::new(root_path)
         .follow_links(false)
@@ -66,15 +92,29 @@ pub fn build_groups(root_path: &Path) -> Vec<ScannedGroup> {
         }
 
         let path = entry.path();
+        scanned_files += 1;
+        if let Some(parent) = path.parent() {
+            last_dir = parent.to_string_lossy().to_string();
+        }
         let extension = path
             .extension()
             .and_then(|value| value.to_str())
             .unwrap_or_default()
             .to_ascii_lowercase();
         let kind = FileKind::from_extension(&extension);
+        if scanned_files == 1 || scanned_files % 250 == 0 {
+            on_progress(ScanProgress {
+                root_path: root.clone(),
+                scanned_files,
+                matched_files,
+                current_dir: last_dir.clone(),
+                done: false,
+            });
+        }
         if matches!(kind, FileKind::Other) {
             continue;
         }
+        matched_files += 1;
 
         let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
             continue;
@@ -107,6 +147,14 @@ pub fn build_groups(root_path: &Path) -> Vec<ScannedGroup> {
                 height: None,
             });
     }
+
+    on_progress(ScanProgress {
+        root_path: root.clone(),
+        scanned_files,
+        matched_files,
+        current_dir: last_dir,
+        done: false,
+    });
 
     grouped
         .into_iter()
