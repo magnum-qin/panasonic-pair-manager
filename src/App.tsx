@@ -5,10 +5,12 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import {
   CheckCircle2,
+  ExternalLink,
   FileText,
   FolderPlus,
   Image,
@@ -22,11 +24,22 @@ import {
   SquareCheckBig,
   Trash2,
 } from "lucide-react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import {
+  countPhotoGroups,
   deletePhotoGroups,
   getPhotoGroup,
   getPhotoGroupMetadata,
+  getScanSummary,
   listPhotoGroups,
   listRemovableRoots,
   openPhotoFile,
@@ -49,7 +62,7 @@ import {
   type TranslationKey,
 } from "./i18n";
 import { THEME_OPTIONS, normalizeTheme, type ThemeCode } from "./theme-options";
-import type { GroupKindFilter, PhotoGroupFilter, ScanSummary } from "./types";
+import type { DriveCandidate, GroupKindFilter, PhotoGroup, PhotoGroupFilter, ScanSummary } from "./types";
 import { fileName, formatBytes, PAGE_SIZE } from "./utils";
 
 const CARD_SIZE_PRESETS = [
@@ -60,6 +73,22 @@ const CARD_SIZE_PRESETS = [
 ] as const;
 
 type CardSizePreset = (typeof CARD_SIZE_PRESETS)[number]["value"];
+
+const MANUAL_ROOTS_STORAGE_KEY = "ppm.manualRoots";
+
+function loadStoredManualRoots() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(MANUAL_ROOTS_STORAGE_KEY) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return Array.from(
+      new Set(
+        parsed.filter((path): path is string => typeof path === "string" && Boolean(path.trim())),
+      ),
+    );
+  } catch {
+    return [];
+  }
+}
 
 function nearestCardSizePreset(value: number): CardSizePreset {
   return CARD_SIZE_PRESETS.reduce((nearest, preset) =>
@@ -106,19 +135,38 @@ export default function App() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [closingModal, setClosingModal] = useState<"about" | "settings" | "delete" | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<"info" | "metadata">("info");
+  const [contextMenu, setContextMenu] = useState<{
+    group: PhotoGroup;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [manualRoots, setManualRoots] = useState<string[]>(loadStoredManualRoots);
   const [cardSize, setCardSize] = useState(() => {
     const stored = Number(window.localStorage.getItem("ppm.cardSize"));
     return Number.isFinite(stored) ? nearestCardSizePreset(stored) : 230;
   });
   const deferredQuery = useDeferredValue(query);
   const selectionModeRef = useRef(selectionMode);
+  const activeByRootRef = useRef<Record<string, string>>({});
   const knownDrivePathsRef = useRef<Set<string>>(new Set());
-  const autoScannedPathsRef = useRef<Set<string>>(new Set());
+  const seenRemovablePathsRef = useRef<Set<string>>(new Set());
   const refreshTimerRef = useRef<number | undefined>(undefined);
   const refreshDelayTimerRef = useRef<number | undefined>(undefined);
   const refreshLockedRef = useRef(false);
+
+  const clearActiveSource = useCallback(
+    (nextMessage?: string) => {
+      setRootPath("");
+      setActiveId("");
+      setSelected(new Set());
+      setScanSummary(null);
+      if (nextMessage) setMessage(nextMessage);
+    },
+    [],
+  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -129,6 +177,33 @@ export default function App() {
     document.documentElement.lang = language;
     window.localStorage.setItem("ppm.language", language);
   }, [language]);
+
+  useEffect(() => {
+    window.localStorage.setItem(MANUAL_ROOTS_STORAGE_KEY, JSON.stringify(manualRoots));
+  }, [manualRoots]);
+
+  const closeModal = useCallback(
+    (modal: "about" | "settings" | "delete", setOpen: (open: boolean) => void) => {
+      setClosingModal(modal);
+      window.setTimeout(() => {
+        setOpen(false);
+        setClosingModal((current) => (current === modal ? null : current));
+      }, 160);
+    },
+    [],
+  );
+
+  const closeAbout = useCallback(() => {
+    closeModal("about", setAboutOpen);
+  }, [closeModal]);
+
+  const closeSettings = useCallback(() => {
+    closeModal("settings", setSettingsOpen);
+  }, [closeModal]);
+
+  const closeDelete = useCallback(() => {
+    closeModal("delete", setDeleteOpen);
+  }, [closeModal]);
 
   const rootAvailableQuery = useQuery({
     enabled: Boolean(rootPath),
@@ -148,6 +223,18 @@ export default function App() {
       return pages.reduce((sum, page) => sum + Math.min(page.length, PAGE_SIZE), 0);
     },
     placeholderData: keepPreviousData,
+  });
+
+  const summaryQuery = useQuery({
+    enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
+    queryFn: () => getScanSummary(rootPath),
+    queryKey: ["scan-summary", rootPath],
+  });
+
+  const groupCountQuery = useQuery({
+    enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
+    queryFn: () => countPhotoGroups(getGroupsFilter(rootPath, deferredQuery, groupKind, 0)),
+    queryKey: ["photo-group-count", rootPath, deferredQuery, groupKind],
   });
 
   const groups = useMemo(
@@ -174,6 +261,29 @@ export default function App() {
     refetchInterval: 30_000,
   });
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    listen<DriveCandidate[]>("removable-roots-changed", (event) => {
+      queryClient.setQueryData(["removable-roots"], event.payload);
+      if (rootPath) {
+        queryClient.invalidateQueries({ queryKey: ["path-exists", rootPath] });
+      }
+    }).then((nextUnlisten) => {
+      if (cancelled) {
+        nextUnlisten();
+        return;
+      }
+      unlisten = nextUnlisten;
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [queryClient, rootPath]);
+
   const scanMutation = useMutation({
     mutationFn: scanRoot,
     onMutate: () => {
@@ -186,6 +296,8 @@ export default function App() {
       setActiveId("");
       setQuery("");
       await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
+      await queryClient.invalidateQueries({ queryKey: ["photo-group-count"] });
+      await queryClient.invalidateQueries({ queryKey: ["scan-summary", summary.rootPath] });
       setMessage(t("status.scanCompleted", { groups: summary.groups, files: summary.files }));
     },
     onError: (error) => setMessage(String(error)),
@@ -194,10 +306,12 @@ export default function App() {
   const deleteMutation = useMutation({
     mutationFn: deletePhotoGroups,
     onSuccess: async (summary) => {
-      setDeleteOpen(false);
+      closeDelete();
       setSelected(new Set());
       setActiveId("");
       await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
+      await queryClient.invalidateQueries({ queryKey: ["photo-group-count"] });
+      await queryClient.invalidateQueries({ queryKey: ["scan-summary", rootPath] });
       await queryClient.invalidateQueries({ queryKey: ["photo-group-detail"] });
       setMessage(
         t("status.deleted", {
@@ -209,12 +323,19 @@ export default function App() {
     onError: (error) => setMessage(String(error)),
   });
 
-  const busy = scanMutation.isPending || deleteMutation.isPending;
+  const scanning = scanMutation.isPending;
+  const deleting = deleteMutation.isPending;
+  const busy = scanning || deleting;
   const detectedRoots = drivesQuery.data ?? [];
+  const manualRootSet = useMemo(() => new Set(manualRoots), [manualRoots]);
   const rootIsAvailable = !rootPath || rootAvailableQuery.data !== false;
   const hasSource = Boolean(rootPath) && rootIsAvailable;
   const visibleGroups = hasSource ? groups : [];
   const visibleHasMoreGroups = hasSource ? hasMoreGroups : false;
+  const currentSummary =
+    hasSource ? (summaryQuery.data ?? (scanSummary?.rootPath === rootPath ? scanSummary : null)) : null;
+  const visibleGroupCount = hasSource ? (groupCountQuery.data ?? visibleGroups.length) : 0;
+  const modalOpen = aboutOpen || settingsOpen || deleteOpen;
   const selectedGroups = useMemo(
     () => visibleGroups.filter((group) => selected.has(group.id)),
     [selected, visibleGroups],
@@ -237,7 +358,12 @@ export default function App() {
   const chooseFolder = useCallback(async () => {
     const path = await selectRootFolder();
     if (!path) return;
+    setManualRoots((current) => (current.includes(path) ? current : [...current, path]));
     setRootPath(path);
+    if (scanMutation.isPending) {
+      setMessage(t("source.selectedManual", { name: fileName(path) || path }));
+      return;
+    }
     setMessage(t("source.folderSelected"));
     scanMutation.mutate(path);
   }, [scanMutation, t]);
@@ -264,13 +390,26 @@ export default function App() {
     }, 160);
   }, [queryClient]);
 
-  const clearManualRoot = useCallback(() => {
-    setRootPath("");
-    setActiveId("");
-    setSelected(new Set());
-    setScanSummary(null);
-    setMessage(t("source.folderRemoved"));
-  }, [t]);
+  const selectManualRoot = useCallback(
+    (path: string) => {
+      setRootPath(path);
+      setMessage(t("source.selectedManual", { name: fileName(path) || path }));
+      queryClient.invalidateQueries({ queryKey: ["photo-groups", path] });
+    },
+    [queryClient, t],
+  );
+
+  const clearManualRoot = useCallback(
+    (path: string) => {
+      setManualRoots((current) => current.filter((root) => root !== path));
+      if (rootPath === path) {
+        clearActiveSource(t("source.folderRemoved"));
+        return;
+      }
+      setMessage(t("source.folderRemoved"));
+    },
+    [clearActiveSource, rootPath, t],
+  );
 
   const toggleSelected = useCallback((id: string) => {
     setSelected((current) => {
@@ -281,15 +420,27 @@ export default function App() {
     });
   }, []);
 
+  const rememberActiveGroup = useCallback(
+    (id: string, sourcePath = rootPath) => {
+      setActiveId(id);
+      if (!sourcePath) return;
+      activeByRootRef.current = {
+        ...activeByRootRef.current,
+        [sourcePath]: id,
+      };
+    },
+    [rootPath],
+  );
+
   const activateOrSelect = useCallback(
     (id: string) => {
       if (selectionModeRef.current) {
         toggleSelected(id);
       } else {
-        setActiveId(id);
+        rememberActiveGroup(id);
       }
     },
-    [toggleSelected],
+    [rememberActiveGroup, toggleSelected],
   );
 
   const applyKindFilter = useCallback((nextKind: GroupKindFilter) => {
@@ -305,15 +456,32 @@ export default function App() {
     });
   }, []);
 
+  const openPhotoContextMenu = useCallback((group: PhotoGroup, x: number, y: number) => {
+    setContextMenu({ group, x, y });
+  }, []);
+
+  const closePhotoContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const deleteContextGroup = useCallback((group: PhotoGroup) => {
+    setSelected(new Set([group.id]));
+    setSelectionMode(true);
+    setClosingModal(null);
+    setDeleteOpen(true);
+    setContextMenu(null);
+  }, []);
+
   const confirmDelete = useCallback(() => {
     if (!selected.size) return;
     deleteMutation.mutate([...selected]);
   }, [deleteMutation, selected]);
 
   const openGroup = useCallback(
-    async (id: string) => {
-      if (selectionModeRef.current) return;
-      setActiveId(id);
+    async (id: string, force = false) => {
+      if (selectionModeRef.current && !force) return;
+      setContextMenu(null);
+      rememberActiveGroup(id);
       setMessage(t("status.opening"));
       try {
         const path = await openPhotoGroup(id);
@@ -322,7 +490,7 @@ export default function App() {
         setMessage(String(error));
       }
     },
-    [t],
+    [rememberActiveGroup, t],
   );
 
   const openFile = useCallback(
@@ -363,24 +531,36 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!visibleGroups.length || activeId) return;
-    setActiveId(visibleGroups[0].id);
-  }, [activeId, visibleGroups]);
+    setSelected(new Set());
+    setActiveId(rootPath ? (activeByRootRef.current[rootPath] ?? "") : "");
+    setInspectorTab("info");
+  }, [rootPath]);
+
+  useEffect(() => {
+    if (!visibleGroups.length) {
+      if (activeId) setActiveId("");
+      return;
+    }
+
+    if (activeId && visibleGroups.some((group) => group.id === activeId)) return;
+
+    const rememberedId = rootPath ? activeByRootRef.current[rootPath] : "";
+    const nextId =
+      rememberedId && visibleGroups.some((group) => group.id === rememberedId)
+        ? rememberedId
+        : visibleGroups[0].id;
+    rememberActiveGroup(nextId, rootPath);
+  }, [activeId, rememberActiveGroup, rootPath, visibleGroups]);
 
   useEffect(() => {
     if (hasSource) return;
-    setActiveId("");
-    setSelected(new Set());
-    setScanSummary(null);
-  }, [hasSource]);
+    clearActiveSource();
+  }, [clearActiveSource, hasSource]);
 
   useEffect(() => {
     if (rootAvailableQuery.data !== false) return;
-    setActiveId("");
-    setSelected(new Set());
-    setScanSummary(null);
-    setMessage(t("source.offline"));
-  }, [rootAvailableQuery.data, t]);
+    clearActiveSource(t("source.offline"));
+  }, [clearActiveSource, rootAvailableQuery.data, t]);
 
   useEffect(() => {
     setInspectorTab("info");
@@ -391,6 +571,18 @@ export default function App() {
     if (!candidates) return;
 
     const currentPaths = new Set(candidates.map((candidate) => candidate.scanPath));
+    const removedActiveRemovableRoot =
+      rootPath &&
+      !manualRootSet.has(rootPath) &&
+      seenRemovablePathsRef.current.has(rootPath) &&
+      !currentPaths.has(rootPath);
+
+    candidates.forEach((candidate) => seenRemovablePathsRef.current.add(candidate.scanPath));
+
+    if (removedActiveRemovableRoot) {
+      clearActiveSource(t("source.removableRemoved"));
+    }
+
     const nextCandidate = candidates.find(
       (candidate) => !knownDrivePathsRef.current.has(candidate.scanPath),
     );
@@ -400,38 +592,45 @@ export default function App() {
 
     const scanPath = nextCandidate.scanPath;
     setRootPath(scanPath);
-    if (autoScannedPathsRef.current.has(scanPath)) {
-      queryClient.invalidateQueries({ queryKey: ["photo-groups", scanPath] });
-      setMessage(t("status.detectedCached", { name: nextCandidate.displayName }));
-      return;
-    }
-
-    autoScannedPathsRef.current.add(scanPath);
     setMessage(t("status.detectedIndexing", { name: nextCandidate.displayName }));
     scanMutation.mutate(scanPath);
-  }, [busy, drivesQuery.data, queryClient, scanMutation, t]);
+  }, [busy, clearActiveSource, drivesQuery.data, manualRootSet, queryClient, rootPath, scanMutation, t]);
 
   return (
     <div className={`app-shell ${selectionMode ? "selection-mode" : ""}`}>
+      <div className="app-content" aria-hidden={modalOpen ? true : undefined}>
       <div className="toolbar">
-        <ToolbarButton disabled={busy || !hasSource} onClick={() => scan()}>
-          <RefreshCw size={17} /> {t("action.rescan")}
-        </ToolbarButton>
-        <ToolbarButton
-          active={selectionMode}
-          disabled={busy || !hasSource || !visibleGroups.length}
-          onClick={toggleSelectionMode}
-        >
-          <SquareCheckBig size={17} /> {t("action.multiSelect")}
-        </ToolbarButton>
-        <ToolbarButton
-          disabled={busy || !selectionMode || !selected.size}
-          hidden={!selectionMode}
-          onClick={() => setDeleteOpen(true)}
-          variant="danger"
-        >
-          <Trash2 size={17} /> {t("action.deleteSelected")}
-        </ToolbarButton>
+        {hasSource && (
+          <>
+            <ToolbarButton disabled={scanning || deleting} onClick={() => scan()}>
+              <RefreshCw size={17} /> {t("action.rescan")}
+            </ToolbarButton>
+            <ToolbarButton
+              active={selectionMode}
+              disabled={deleting || !visibleGroups.length}
+              onClick={toggleSelectionMode}
+            >
+              <SquareCheckBig size={17} /> {t("action.multiSelect")}
+            </ToolbarButton>
+            {selectionMode && (
+              <ToolbarButton
+                disabled={deleting || !selected.size}
+                onClick={() => {
+                  setClosingModal(null);
+                  setDeleteOpen(true);
+                }}
+                variant="danger"
+              >
+                <Trash2 size={17} /> {t("action.deleteSelected")}
+              </ToolbarButton>
+            )}
+          </>
+        )}
+        {!hasSource && (
+          <ToolbarButton disabled={deleting} onClick={chooseFolder}>
+            <FolderPlus size={17} /> {t("action.chooseFolder")}
+          </ToolbarButton>
+        )}
         <div className="toolbar-spacer" />
         <div className="size-control" aria-label={t("size.card")} title={t("size.card")}>
           <span>{t("size.card")}</span>
@@ -449,19 +648,20 @@ export default function App() {
             ))}
           </div>
         </div>
-        <label className="searchbox">
-          <Search size={16} />
-          <input
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setActiveId("");
-              setSelected(new Set());
-            }}
-            placeholder={t("search.placeholder")}
-            disabled={!hasSource}
-          />
-        </label>
+        {hasSource && (
+          <label className="searchbox">
+            <Search size={16} />
+            <input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setActiveId("");
+                setSelected(new Set());
+              }}
+              placeholder={t("search.placeholder")}
+            />
+          </label>
+        )}
         {selectionMode && (
           <div className="selection-meter">{t("common.selected", { count: selected.size })}</div>
         )}
@@ -469,13 +669,35 @@ export default function App() {
 
       <main className="workspace">
         <aside className="sidebar">
-          <section>
-            <div className="section-heading">
-              <span>{t("source.autoDetect")}</span>
-              <div className="heading-actions">
-                <IconButton disabled={busy} label={t("source.addFolder")} onClick={chooseFolder}>
+          <section className="sidebar-module sources-module">
+            <div className="source-group">
+              <div className="source-group-header">
+                <span>{t("source.fixedFolders")}</span>
+                <IconButton disabled={deleting} label={t("source.addFolder")} onClick={chooseFolder}>
                   <FolderPlus size={15} />
                 </IconButton>
+              </div>
+              {manualRoots.length ? (
+                manualRoots.map((path) => (
+                  <SidebarItem
+                    active={rootPath === path}
+                    disabled={deleting}
+                    key={path}
+                    label={fileName(path) || path}
+                    onClear={() => clearManualRoot(path)}
+                    onClick={() => selectManualRoot(path)}
+                    removeLabel={t("source.removeFolder")}
+                    subtitle={path}
+                  />
+                ))
+              ) : (
+                <div className="empty-note compact">{t("source.fixedEmpty")}</div>
+              )}
+            </div>
+
+            <div className="source-group">
+              <div className="source-group-header">
+                <span>{t("source.removableDevices")}</span>
                 <IconButton
                   disabled={false}
                   label={t("source.refresh")}
@@ -484,42 +706,49 @@ export default function App() {
                   <RefreshCw size={14} />
                 </IconButton>
               </div>
-            </div>
-            <div className="detected-drives">
-              {detectedRoots.length || rootPath ? (
+              {detectedRoots.length ? (
                 <>
                   {detectedRoots.map((drive) => (
                     <SidebarItem
                       active={rootPath === drive.scanPath}
-                      disabled={busy}
+                      disabled={deleting}
                       key={drive.scanPath}
                       label={drive.displayName}
                       onClick={() => {
                         setRootPath(drive.scanPath);
-                        setMessage(t("source.selectedManual", { name: drive.displayName }));
+                        if (scanMutation.isPending) {
+                          setMessage(t("source.selectedManual", { name: drive.displayName }));
+                          return;
+                        }
+                        setMessage(t("status.detectedIndexing", { name: drive.displayName }));
+                        scanMutation.mutate(drive.scanPath);
                       }}
                       subtitle={drive.scanPath}
                     />
                   ))}
-                  {!detectedRoots.some((drive) => drive.scanPath === rootPath) && rootPath ? (
-                    <SidebarItem
-                      active
-                      disabled={busy}
-                      label={fileName(rootPath) || rootPath}
-                      onClear={clearManualRoot}
-                      onClick={() => queryClient.invalidateQueries({ queryKey: ["photo-groups"] })}
-                      removeLabel={t("source.removeFolder")}
-                      subtitle={rootPath}
-                    />
-                  ) : null}
                 </>
               ) : (
                 <div className="empty-note">{t("source.empty")}</div>
               )}
             </div>
+
+              {rootPath && !manualRootSet.has(rootPath) && !detectedRoots.some((drive) => drive.scanPath === rootPath) ? (
+                <div className="source-group">
+                  <div className="source-group-header">
+                    <span>{t("source.currentSource")}</span>
+                  </div>
+                  <SidebarItem
+                    active
+                    disabled={deleting}
+                    label={fileName(rootPath) || rootPath}
+                    onClick={() => queryClient.invalidateQueries({ queryKey: ["photo-groups"] })}
+                    subtitle={rootPath}
+                  />
+                </div>
+              ) : null}
           </section>
 
-          <section className="scan-summary">
+          <section className="sidebar-module scan-summary">
             <div className="section-heading">
               <span>{t("summary.scan")}</span>
             </div>
@@ -528,28 +757,28 @@ export default function App() {
               icon={<Layers size={15} />}
               label={t("common.groups")}
               onClick={() => applyKindFilter("all")}
-              value={hasSource ? (scanSummary?.groups ?? visibleGroups.length) : 0}
+              value={hasSource ? (currentSummary?.groups ?? visibleGroups.length) : 0}
             />
             <SummaryButton
               active={groupKind === "paired"}
               icon={<Link2 size={15} />}
               label={t("filter.paired")}
               onClick={() => applyKindFilter("paired")}
-              value={hasSource ? (scanSummary?.pairedGroups ?? 0) : 0}
+              value={hasSource ? (currentSummary?.pairedGroups ?? 0) : 0}
             />
             <SummaryButton
               active={groupKind === "rawOnly"}
               icon={<FileText size={15} />}
               label={t("filter.rawOnly")}
               onClick={() => applyKindFilter("rawOnly")}
-              value={hasSource ? (scanSummary?.rawOnlyGroups ?? 0) : 0}
+              value={hasSource ? (currentSummary?.rawOnlyGroups ?? 0) : 0}
             />
             <SummaryButton
               active={groupKind === "jpgOnly"}
               icon={<Image size={15} />}
               label={t("filter.jpgOnly")}
               onClick={() => applyKindFilter("jpgOnly")}
-              value={hasSource ? (scanSummary?.jpgOnlyGroups ?? 0) : 0}
+              value={hasSource ? (currentSummary?.jpgOnlyGroups ?? 0) : 0}
             />
           </section>
         </aside>
@@ -571,13 +800,15 @@ export default function App() {
           minCardWidth={cardSize}
           noPreviewLabel={t("empty.noPreview")}
           onActivate={activateOrSelect}
+          onContextMenu={openPhotoContextMenu}
           onEmptyAction={chooseFolder}
           onLoadMore={loadMoreGroups}
           onOpen={openGroup}
           onToggle={toggleSelected}
-          photoGroupsLabel={t("gallery.photoGroups", { count: visibleGroups.length })}
+          photoGroupsLabel={t("gallery.photoGroups", { count: visibleGroupCount })}
           scrollToContinueLabel={t("gallery.scrollToContinue")}
           selected={selected}
+          totalGroups={visibleGroupCount}
         />
 
         <aside className="inspector">
@@ -682,23 +913,50 @@ export default function App() {
           <span>{message}</span>
         </div>
         <div className="status-actions">
-          <button className="status-info" aria-label={t("common.info")} onClick={() => setAboutOpen(true)}>
+          <button
+            className="status-info"
+            aria-label={t("common.info")}
+            onClick={() => {
+              setClosingModal(null);
+              setAboutOpen(true);
+            }}
+          >
             <Info size={15} />
           </button>
-          <button className="status-info" aria-label={t("setting.open")} onClick={() => setSettingsOpen(true)}>
+          <button
+            className="status-info"
+            aria-label={t("setting.open")}
+            onClick={() => {
+              setClosingModal(null);
+              setSettingsOpen(true);
+            }}
+          >
             <Settings size={15} />
           </button>
         </div>
       </footer>
+      </div>
+
+      {contextMenu && (
+        <PhotoContextMenu
+          deleteDisabled={deleting}
+          group={contextMenu.group}
+          onClose={closePhotoContextMenu}
+          onDelete={() => deleteContextGroup(contextMenu.group)}
+          onOpen={() => openGroup(contextMenu.group.id, true)}
+          t={t}
+          x={contextMenu.x}
+          y={contextMenu.y}
+        />
+      )}
 
       {aboutOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setAboutOpen(false)}>
-          <div
-            className="modal about-modal"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <AccessibleModal
+          className="about-modal"
+          closing={closingModal === "about"}
+          onClose={closeAbout}
+          title="Panasonic Pair Manager"
+        >
             <header>
               <Info size={20} />
               <h2>Panasonic Pair Manager</h2>
@@ -711,20 +969,18 @@ export default function App() {
               <SummaryRow label="Metadata" value={t("about.metadata")} />
             </div>
             <div className="modal-actions">
-              <Button onClick={() => setAboutOpen(false)}>{t("action.close")}</Button>
+              <Button onClick={closeAbout}>{t("action.close")}</Button>
             </div>
-          </div>
-        </div>
+        </AccessibleModal>
       )}
 
       {settingsOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
-          <div
-            className="modal settings-modal"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <AccessibleModal
+          className="settings-modal"
+          closing={closingModal === "settings"}
+          onClose={closeSettings}
+          title={t("setting.title")}
+        >
             <header>
               <Settings size={20} />
               <h2>{t("setting.title")}</h2>
@@ -734,7 +990,10 @@ export default function App() {
                 <span>{t("setting.theme")}</span>
                 <Select
                   className="setting-select"
-                  MenuProps={{ classes: { paper: "setting-select-menu" } }}
+                  MenuProps={{
+                    classes: { paper: "setting-select-menu" },
+                    disablePortal: true,
+                  }}
                   size="small"
                   value={theme}
                   onChange={(event) => setTheme(normalizeTheme(event.target.value))}
@@ -750,7 +1009,10 @@ export default function App() {
                 <span>{t("setting.language")}</span>
                 <Select
                   className="setting-select"
-                  MenuProps={{ classes: { paper: "setting-select-menu" } }}
+                  MenuProps={{
+                    classes: { paper: "setting-select-menu" },
+                    disablePortal: true,
+                  }}
                   size="small"
                   value={language}
                   onChange={(event) => setLanguage(normalizeLanguage(event.target.value))}
@@ -764,15 +1026,18 @@ export default function App() {
               </label>
             </div>
             <div className="modal-actions">
-              <Button onClick={() => setSettingsOpen(false)}>{t("action.close")}</Button>
+              <Button onClick={closeSettings}>{t("action.close")}</Button>
             </div>
-          </div>
-        </div>
+        </AccessibleModal>
       )}
 
       {deleteOpen && (
-        <div className="modal-backdrop" role="presentation">
-          <div className="modal" role="dialog" aria-modal="true">
+        <AccessibleModal
+          closeOnBackdrop={false}
+          closing={closingModal === "delete"}
+          onClose={closeDelete}
+          title={t("delete.title")}
+        >
             <header>
               <Trash2 size={20} />
               <h2>{t("delete.title")}</h2>
@@ -790,18 +1055,185 @@ export default function App() {
               {t("delete.moveToRecycle")}
             </label>
             <div className="modal-actions">
-              <Button disabled={busy} onClick={confirmDelete} variant="solidDanger">
+              <Button disabled={deleting} onClick={confirmDelete} variant="solidDanger">
                 {t("action.delete")}
               </Button>
-              <Button disabled={busy} onClick={() => setDeleteOpen(false)}>
+              <Button disabled={deleting} onClick={closeDelete}>
                 {t("action.cancel")}
               </Button>
             </div>
-          </div>
-        </div>
+        </AccessibleModal>
       )}
     </div>
   );
+}
+
+function AccessibleModal({
+  children,
+  className = "",
+  closing = false,
+  closeOnBackdrop = true,
+  onClose,
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  closing?: boolean;
+  closeOnBackdrop?: boolean;
+  onClose: () => void;
+  title: string;
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const focusable = getFocusableElements(dialogRef.current);
+    (focusable[0] ?? dialogRef.current)?.focus();
+    return () => previouslyFocused?.focus();
+  }, []);
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+
+    if (event.key !== "Tab") return;
+
+    const focusable = getFocusableElements(dialogRef.current);
+    if (!focusable.length) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const activeElement = document.activeElement;
+
+    if (event.shiftKey && activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  return (
+    <div
+      className={`modal-backdrop ${closing ? "closing" : ""}`}
+      role="presentation"
+      onMouseDown={(event) => {
+        if (closeOnBackdrop && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        className={`modal ${closing ? "closing" : ""} ${className}`}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PhotoContextMenu({
+  deleteDisabled,
+  group,
+  onClose,
+  onDelete,
+  onOpen,
+  t,
+  x,
+  y,
+}: {
+  deleteDisabled: boolean;
+  group: PhotoGroup;
+  onClose: () => void;
+  onDelete: () => void;
+  onOpen: () => void;
+  t: ReturnType<typeof makeTranslator>;
+  x: number;
+  y: number;
+}) {
+  useEffect(() => {
+    const close = () => onClose();
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  const left = Math.min(x, Math.max(12, window.innerWidth - 190));
+  const top = Math.min(y, Math.max(12, window.innerHeight - 120));
+
+  return (
+    <div
+      className="photo-context-menu"
+      role="menu"
+      style={{ left, top }}
+      onClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <div className="context-menu-title" title={group.stem}>
+        {group.stem}
+      </div>
+      <button
+        className="context-menu-item"
+        onClick={() => {
+          onOpen();
+          onClose();
+        }}
+        role="menuitem"
+        type="button"
+      >
+        <ExternalLink size={15} />
+        {t("action.open")}
+      </button>
+      <button
+        className="context-menu-item danger"
+        disabled={deleteDisabled}
+        onClick={() => {
+          onDelete();
+          onClose();
+        }}
+        role="menuitem"
+        type="button"
+      >
+        <Trash2 size={15} />
+        {t("action.delete")}
+      </button>
+    </div>
+  );
+}
+
+function getFocusableElements(container: HTMLElement | null) {
+  if (!container) return [];
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hasAttribute("hidden") && element.offsetParent !== null);
 }
 
 function MetadataPanel({

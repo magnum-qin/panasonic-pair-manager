@@ -21,6 +21,14 @@ export function listPhotoGroups(filter: PhotoGroupFilter) {
   return invoke<PhotoGroup[]>("list_photo_groups", { filter });
 }
 
+export function countPhotoGroups(filter: PhotoGroupFilter) {
+  return invoke<number>("count_photo_groups", { filter });
+}
+
+export function getScanSummary(rootPath: string) {
+  return invoke<ScanSummary>("get_scan_summary", { rootPath });
+}
+
 export function getPhotoGroup(id: string) {
   return invoke<PhotoGroupDetail>("get_photo_group", { id });
 }

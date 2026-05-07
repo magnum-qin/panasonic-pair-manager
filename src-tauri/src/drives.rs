@@ -21,7 +21,7 @@ pub fn list_removable_roots() -> Vec<DriveCandidate> {
             }
 
             let drive = PathBuf::from(&drive_path);
-            if !drive.exists() {
+            if !drive.exists() || !is_drive_ready(&drive) {
                 return None;
             }
 
@@ -33,6 +33,10 @@ pub fn list_removable_roots() -> Vec<DriveCandidate> {
 #[cfg(not(target_os = "windows"))]
 pub fn list_removable_roots() -> Vec<DriveCandidate> {
     Vec::new()
+}
+
+fn is_drive_ready(drive: &Path) -> bool {
+    std::fs::read_dir(drive).is_ok()
 }
 
 fn candidate_for_drive(letter: char, drive: &Path) -> DriveCandidate {

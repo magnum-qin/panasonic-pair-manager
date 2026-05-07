@@ -40,6 +40,7 @@ export function PhotoGrid({
   minCardWidth,
   noPreviewLabel,
   onActivate,
+  onContextMenu,
   onEmptyAction,
   onLoadMore,
   onOpen,
@@ -47,6 +48,7 @@ export function PhotoGrid({
   photoGroupsLabel,
   scrollToContinueLabel,
   selected,
+  totalGroups,
 }: {
   activeId: string;
   emptyActionLabel?: string;
@@ -60,6 +62,7 @@ export function PhotoGrid({
   minCardWidth: number;
   noPreviewLabel: string;
   onActivate: (id: string) => void;
+  onContextMenu: (group: PhotoGroup, x: number, y: number) => void;
   onEmptyAction?: () => void;
   onLoadMore: () => void;
   onOpen: (id: string) => void;
@@ -67,6 +70,7 @@ export function PhotoGrid({
   photoGroupsLabel: string;
   scrollToContinueLabel: string;
   selected: Set<string>;
+  totalGroups: number;
 }) {
   const [scrollRef, width] = useElementWidth<HTMLElement>();
   const contentWidth = Math.max(width - GRID_PADDING * 2, minCardWidth);
@@ -80,8 +84,9 @@ export function PhotoGrid({
     480,
     Math.max(240, Math.ceil((cardWidth * 1.15) / THUMBNAIL_SIZE_STEP) * THUMBNAIL_SIZE_STEP),
   );
-  const groupRowCount = Math.ceil(groups.length / columns);
-  const rowCount = groupRowCount + (hasMore ? 1 : 0);
+  const loadedRowCount = Math.ceil(groups.length / columns);
+  const totalGroupCount = Math.max(groups.length, totalGroups);
+  const rowCount = Math.ceil(totalGroupCount / columns);
   const totalSize = useMemo(
     () => groups.reduce((sum, group) => sum + group.totalSize, 0),
     [groups],
@@ -98,10 +103,10 @@ export function PhotoGrid({
   useEffect(() => {
     const lastRow = virtualRows[virtualRows.length - 1];
     if (!lastRow || !hasMore || isFetchingMore) return;
-    if (lastRow.index >= groupRowCount - 3) {
+    if (lastRow.index >= loadedRowCount - 3) {
       onLoadMore();
     }
-  }, [groupRowCount, hasMore, isFetchingMore, onLoadMore, virtualRows]);
+  }, [hasMore, isFetchingMore, loadedRowCount, onLoadMore, virtualRows]);
 
   return (
     <section className="gallery" ref={scrollRef}>
@@ -113,7 +118,7 @@ export function PhotoGrid({
         <span>{formatBytes(totalSize)}</span>
       </div>
 
-      {!groups.length ? (
+      {!groups.length && !totalGroupCount ? (
         <div className="grid">
           <div className="gallery-empty action-empty">
             <ImageOff size={38} />
@@ -129,7 +134,7 @@ export function PhotoGrid({
           {virtualRows.map((virtualRow) => {
             const start = virtualRow.index * columns;
             const rowGroups = groups.slice(start, start + columns);
-            const isLoaderRow = virtualRow.index >= groupRowCount;
+            const isLoaderRow = start >= groups.length;
             return (
               <div
                 className={`virtual-row ${isLoaderRow ? "virtual-loader-row" : ""}`}
@@ -154,6 +159,7 @@ export function PhotoGrid({
                       noPreviewLabel={noPreviewLabel}
                       thumbnailSize={thumbnailSize}
                       onActivate={onActivate}
+                      onContextMenu={onContextMenu}
                       onOpen={onOpen}
                       onToggle={onToggle}
                     />

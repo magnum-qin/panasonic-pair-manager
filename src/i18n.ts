@@ -24,6 +24,7 @@ export type TranslationKey =
   | "action.delete"
   | "action.deleteSelected"
   | "action.multiSelect"
+  | "action.open"
   | "action.rescan"
   | "common.camera"
   | "common.captureTime"
@@ -75,12 +76,17 @@ export type TranslationKey =
   | "search.placeholder"
   | "source.addFolder"
   | "source.autoDetect"
+  | "source.currentSource"
   | "source.empty"
+  | "source.fixedEmpty"
+  | "source.fixedFolders"
   | "source.folderRemoved"
   | "source.folderSelected"
   | "source.offline"
   | "source.refresh"
   | "source.removeFolder"
+  | "source.removableDevices"
+  | "source.removableRemoved"
   | "source.selectedManual"
   | "summary.scan"
   | "status.detectedCached"
@@ -110,6 +116,7 @@ const en: TranslationMap = {
   "action.delete": "Delete",
   "action.deleteSelected": "Delete Selected",
   "action.multiSelect": "Multi Select",
+  "action.open": "Open",
   "action.rescan": "Rescan",
   "common.camera": "Camera",
   "common.captureTime": "Capture Time",
@@ -161,13 +168,18 @@ const en: TranslationMap = {
   "size.presets": "Photo card size presets",
   "search.placeholder": "Search filename",
   "source.addFolder": "Add folder",
-  "source.autoDetect": "Album Folders",
-  "source.empty": "Insert an SD card, or add a folder manually.",
+  "source.autoDetect": "Photo Sources",
+  "source.currentSource": "Current Source",
+  "source.empty": "No removable devices detected.",
+  "source.fixedEmpty": "No pinned folders yet.",
+  "source.fixedFolders": "Pinned Folders",
   "source.folderRemoved": "Folder removed.",
   "source.folderSelected": "Folder selected; indexing photos...",
   "source.offline": "Source is offline. Insert the SD card or add a folder manually.",
   "source.refresh": "Refresh removable drives",
   "source.removeFolder": "Remove folder",
+  "source.removableDevices": "Removable Devices",
+  "source.removableRemoved": "Removable device removed.",
   "source.selectedManual": "{name} selected. Press Rescan to re-index files.",
   "summary.scan": "Scan Summary",
   "status.deleted": "Moved {count} files to Recycle Bin. {failed}",
@@ -191,6 +203,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "action.delete": "删除",
     "action.deleteSelected": "删除所选",
     "action.multiSelect": "多选",
+    "action.open": "打开",
     "action.rescan": "重新扫描",
     "common.camera": "相机",
     "common.captureTime": "拍摄时间",
@@ -241,13 +254,18 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "size.presets": "照片卡片大小挡位",
     "search.placeholder": "搜索文件名",
     "source.addFolder": "添加文件夹",
-    "source.autoDetect": "相册文件夹",
-    "source.empty": "插入 SD 卡，或手动添加文件夹。",
+    "source.autoDetect": "照片来源",
+    "source.currentSource": "当前来源",
+    "source.empty": "未检测到移动设备。",
+    "source.fixedEmpty": "还没有固定文件夹。",
+    "source.fixedFolders": "固定文件夹",
     "source.folderRemoved": "文件夹已移除。",
     "source.folderSelected": "已选择文件夹；正在索引照片...",
     "source.offline": "来源离线。请插入 SD 卡或手动添加文件夹。",
     "source.refresh": "刷新可移动磁盘",
     "source.removeFolder": "移除文件夹",
+    "source.removableDevices": "移动设备",
+    "source.removableRemoved": "移动设备已移除。",
     "source.selectedManual": "已选择 {name}。点击重新扫描以重新索引文件。",
     "summary.scan": "扫描摘要",
     "status.deleted": "已将 {count} 个文件移到回收站。{failed}",
@@ -268,6 +286,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "action.delete": "刪除",
     "action.deleteSelected": "刪除所選",
     "action.multiSelect": "多選",
+    "action.open": "開啟",
     "action.rescan": "重新掃描",
     "common.camera": "相機",
     "common.captureTime": "拍攝時間",
@@ -318,13 +337,18 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "size.presets": "照片卡片大小檔位",
     "search.placeholder": "搜尋檔名",
     "source.addFolder": "新增資料夾",
-    "source.autoDetect": "相簿資料夾",
-    "source.empty": "插入 SD 卡，或手動新增資料夾。",
+    "source.autoDetect": "照片來源",
+    "source.currentSource": "目前來源",
+    "source.empty": "未偵測到可移除裝置。",
+    "source.fixedEmpty": "尚未固定資料夾。",
+    "source.fixedFolders": "固定資料夾",
     "source.folderRemoved": "資料夾已移除。",
     "source.folderSelected": "已選擇資料夾；正在索引照片...",
     "source.offline": "來源離線。請插入 SD 卡或手動新增資料夾。",
     "source.refresh": "重新整理可移除磁碟",
     "source.removeFolder": "移除資料夾",
+    "source.removableDevices": "可移除裝置",
+    "source.removableRemoved": "可移除裝置已移除。",
     "source.selectedManual": "已選擇 {name}。點擊重新掃描以重新索引檔案。",
     "summary.scan": "掃描摘要",
     "status.deleted": "已將 {count} 個檔案移到資源回收筒。{failed}",
@@ -345,6 +369,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "action.delete": "削除",
     "action.deleteSelected": "選択項目を削除",
     "action.multiSelect": "複数選択",
+    "action.open": "開く",
     "action.rescan": "再スキャン",
     "common.camera": "カメラ",
     "common.captureTime": "撮影時刻",
@@ -377,6 +402,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "action.delete": "삭제",
     "action.deleteSelected": "선택 삭제",
     "action.multiSelect": "다중 선택",
+    "action.open": "열기",
     "action.rescan": "다시 스캔",
     "common.camera": "카메라",
     "common.captureTime": "촬영 시간",
@@ -405,6 +431,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "action.delete": "Supprimer",
     "action.deleteSelected": "Supprimer la selection",
     "action.multiSelect": "Selection multiple",
+    "action.open": "Ouvrir",
     "action.rescan": "Rescanner",
     "common.camera": "Appareil",
     "common.captureTime": "Date de prise",
@@ -432,6 +459,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "action.delete": "Loschen",
     "action.deleteSelected": "Auswahl loschen",
     "action.multiSelect": "Mehrfachauswahl",
+    "action.open": "Offnen",
     "action.rescan": "Neu scannen",
     "common.camera": "Kamera",
     "common.captureTime": "Aufnahmezeit",
@@ -459,6 +487,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "action.delete": "Eliminar",
     "action.deleteSelected": "Eliminar seleccion",
     "action.multiSelect": "Seleccion multiple",
+    "action.open": "Abrir",
     "action.rescan": "Reescanear",
     "common.camera": "Camara",
     "common.captureTime": "Hora de captura",
@@ -486,6 +515,7 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "action.delete": "Excluir",
     "action.deleteSelected": "Excluir selecionados",
     "action.multiSelect": "Selecao multipla",
+    "action.open": "Abrir",
     "action.rescan": "Reescanear",
     "common.camera": "Camera",
     "common.captureTime": "Hora da captura",

@@ -161,7 +161,7 @@ html {
 
 body {
   margin: 0;
-  min-width: 980px;
+  min-width: 0;
   width: 100%;
   height: 100%;
   min-height: 100vh;
@@ -310,9 +310,13 @@ button[hidden] {
   height: 100vh;
   max-height: 100vh;
   display: grid;
-  grid-template-rows: 64px 1fr 32px;
+  grid-template-rows: auto 1fr 32px;
   overflow: hidden;
   overscroll-behavior: none;
+}
+
+.app-content {
+  display: contents;
 }
 
 .toolbar {
@@ -330,8 +334,10 @@ button[hidden] {
 }
 
 .toolbar {
+  min-height: 64px;
   gap: 12px;
   padding: 11px 18px;
+  flex-wrap: wrap;
 }
 
 .toolbar-spacer {
@@ -360,7 +366,8 @@ button[hidden] {
 
 .searchbox {
   height: 38px;
-  width: 260px;
+  width: clamp(190px, 24vw, 260px);
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -373,7 +380,7 @@ button[hidden] {
 
 .size-control {
   height: 38px;
-  min-width: 218px;
+  min-width: 190px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -447,7 +454,7 @@ button[hidden] {
 
 .workspace {
   display: grid;
-  grid-template-columns: 270px minmax(420px, 1fr) 340px;
+  grid-template-columns: minmax(220px, 270px) minmax(0, 1fr) minmax(260px, 340px);
   min-height: 0;
 }
 
@@ -471,6 +478,10 @@ button[hidden] {
 .inspector section {
   padding: 18px;
   border-bottom: 1px solid var(--color-border-soft);
+}
+
+.sidebar .sidebar-module {
+  padding: 16px;
 }
 
 .section-heading,
@@ -505,12 +516,33 @@ button[hidden] {
   gap: 8px;
   padding: 12px;
   text-align: left;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-md);
-  background: transparent;
+  background: color-mix(in srgb, var(--color-card) 72%, transparent);
   color: var(--color-text);
   justify-content: flex-start;
   overflow: hidden;
+  transform: translateY(0);
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.source-card.MuiButtonBase-root:not(.Mui-disabled):hover {
+  background: var(--color-hover-card);
+  border-color: var(--color-accent-border);
+}
+
+.source-card.MuiButtonBase-root:not(.Mui-disabled):active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.source-card.MuiButtonBase-root.Mui-focusVisible {
+  outline: 2px solid rgba(20, 127, 138, 0.45);
+  outline-offset: 2px;
 }
 
 .source-card.MuiButtonBase-root.active {
@@ -564,14 +596,40 @@ button[hidden] {
   margin-top: 3px;
 }
 
-.detected-drives {
-  margin-top: 12px;
-}
-
 .empty-note {
   color: var(--color-muted);
   font-size: var(--font-md);
   line-height: 1.5;
+}
+
+.empty-note.compact {
+  padding: 4px 2px 2px;
+  font-size: var(--font-sm);
+}
+
+.sources-module {
+  display: grid;
+  gap: 12px;
+}
+
+.source-group {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-card) 58%, transparent);
+}
+
+.source-group-header {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-sm);
+  font-weight: 760;
 }
 
 .summary-row {
@@ -586,17 +644,34 @@ button[hidden] {
   text-align: right;
 }
 
+.scan-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.scan-summary .section-heading {
+  margin: 0 2px 4px;
+  color: var(--color-muted);
+  font-size: var(--font-sm);
+  font-weight: 760;
+}
+
 .summary-button {
   width: 100%;
   display: flex;
   justify-content: space-between;
   padding: 8px 10px;
   margin: 1px 0;
-  border: 1px solid transparent;
-  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  background: color-mix(in srgb, var(--color-card) 72%, transparent);
   color: var(--color-muted);
   font-size: var(--font-md);
   font-weight: 520;
+}
+
+.summary-button:not(:disabled):hover {
+  background: var(--color-hover-card);
+  border-color: var(--color-accent-border);
 }
 
 .summary-button strong {
@@ -693,6 +768,29 @@ button[hidden] {
     box-shadow 100ms ease,
     transform 100ms ease,
     background-color 100ms ease;
+}
+
+.photo-card-action {
+  width: 100%;
+  min-height: 100%;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.photo-card-action:not(:disabled):hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+.photo-card-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+  outline-offset: -3px;
 }
 
 .photo-card:hover {
@@ -1126,19 +1224,31 @@ button[hidden] {
   inset: 0;
   display: grid;
   place-items: center;
+  padding: 18px;
   background: var(--color-backdrop);
   animation: modal-backdrop-in 140ms ease-out both;
-  z-index: 10;
+  z-index: 30;
+}
+
+.modal-backdrop.closing {
+  animation: modal-backdrop-out 160ms ease-in both;
 }
 
 .modal {
-  width: 390px;
+  width: min(390px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
   padding: 18px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-card);
   box-shadow: var(--shadow-modal);
   animation: modal-pop-in 170ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.modal.closing {
+  animation: modal-pop-out 160ms ease-in both;
+  pointer-events: none;
 }
 
 .modal header {
@@ -1158,11 +1268,11 @@ button[hidden] {
 }
 
 .about-modal {
-  width: 460px;
+  width: min(460px, 100%);
 }
 
 .settings-modal {
-  width: 430px;
+  width: min(430px, 100%);
 }
 
 .settings-list {
@@ -1218,6 +1328,7 @@ button[hidden] {
 }
 
 .setting-select-menu.MuiPaper-root {
+  z-index: 40;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-card);
@@ -1270,17 +1381,114 @@ button[hidden] {
   margin-top: 18px;
 }
 
+.photo-context-menu {
+  position: fixed;
+  z-index: 45;
+  width: 178px;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--shadow-modal);
+  animation: modal-pop-in 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.context-menu-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 7px 8px 8px;
+  color: var(--color-muted);
+  font-size: var(--font-sm);
+  border-bottom: 1px solid var(--color-border-soft);
+  margin-bottom: 4px;
+}
+
+.context-menu-item {
+  width: 100%;
+  min-height: 34px;
+  justify-content: flex-start;
+  padding: 7px 9px;
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--font-md);
+}
+
+.context-menu-item:not(:disabled):hover {
+  background: var(--color-accent-soft);
+  border-color: transparent;
+}
+
+.context-menu-item.danger {
+  color: var(--color-danger);
+}
+
 @media (max-width: 1100px) {
-  body {
-    min-width: 760px;
+  .workspace {
+    grid-template-columns: minmax(200px, 230px) minmax(0, 1fr) minmax(220px, 280px);
   }
 
+  .toolbar {
+    gap: 8px;
+    padding: 9px 12px;
+  }
+
+  .size-control {
+    min-width: 174px;
+  }
+}
+
+@media (max-width: 860px) {
   .workspace {
-    grid-template-columns: 230px minmax(380px, 1fr);
+    grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(180px, 32vh);
   }
 
   .inspector {
-    display: none;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
+  }
+
+  .gallery {
+    grid-column: 2;
+  }
+
+  .toolbar-spacer {
+    flex-basis: 100%;
+    height: 0;
+    order: 2;
+  }
+
+  .size-control,
+  .searchbox,
+  .selection-meter {
+    order: 3;
+  }
+}
+
+@media (max-width: 680px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) minmax(180px, 30vh);
+  }
+
+  .sidebar {
+    max-height: 220px;
+  }
+
+  .gallery {
+    grid-column: 1;
+  }
+
+  .setting-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
   }
 }
 
@@ -1306,6 +1514,16 @@ button[hidden] {
   }
 }
 
+@keyframes modal-backdrop-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
 @keyframes modal-pop-in {
   from {
     opacity: 0;
@@ -1315,6 +1533,18 @@ button[hidden] {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-pop-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
   }
 }
 
