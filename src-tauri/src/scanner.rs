@@ -111,6 +111,7 @@ pub fn build_groups(root_path: &Path) -> Vec<ScannedGroup> {
     grouped
         .into_iter()
         .map(|((folder, stem), files)| build_group(root_path, folder, stem, files))
+        .filter(|group| group.raw_count > 0 || group.jpg_count > 0)
         .collect()
 }
 
@@ -260,5 +261,20 @@ mod tests {
         assert_eq!(groups.len(), 2);
         assert!(groups.iter().any(|group| group.folder_name == "103_PANA"));
         assert!(groups.iter().any(|group| group.folder_name == "104_PANA"));
+    }
+
+    #[test]
+    fn ignores_sidecar_without_photo() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("P1000001.XMP"), b"xmp").unwrap();
+        fs::write(dir.path().join("P1000002.RW2"), b"raw").unwrap();
+        fs::write(dir.path().join("P1000002.XMP"), b"xmp").unwrap();
+
+        let groups = build_groups(dir.path());
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].stem, "P1000002");
+        assert_eq!(groups[0].raw_count, 1);
+        assert_eq!(groups[0].sidecar_count, 1);
     }
 }

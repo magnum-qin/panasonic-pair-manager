@@ -156,7 +156,7 @@ impl Database {
             Some("paired") => " AND raw_count > 0 AND jpg_count > 0",
             Some("rawOnly") => " AND raw_count > 0 AND jpg_count = 0",
             Some("jpgOnly") => " AND raw_count = 0 AND jpg_count > 0",
-            _ => "",
+            _ => " AND (raw_count > 0 OR jpg_count > 0)",
         };
 
         match (&filter.root_path, &query) {
@@ -183,7 +183,7 @@ impl Database {
                         Some("paired") => "WHERE raw_count > 0 AND jpg_count > 0",
                         Some("rawOnly") => "WHERE raw_count > 0 AND jpg_count = 0",
                         Some("jpgOnly") => "WHERE raw_count = 0 AND jpg_count > 0",
-                        _ => "",
+                        _ => "WHERE raw_count > 0 OR jpg_count > 0",
                     }
                 ),
                 params![limit, offset],
@@ -198,7 +198,7 @@ impl Database {
             Some("paired") => " AND raw_count > 0 AND jpg_count > 0",
             Some("rawOnly") => " AND raw_count > 0 AND jpg_count = 0",
             Some("jpgOnly") => " AND raw_count = 0 AND jpg_count > 0",
-            _ => "",
+            _ => " AND (raw_count > 0 OR jpg_count > 0)",
         };
 
         let count = match (&filter.root_path, &query) {
@@ -223,7 +223,7 @@ impl Database {
                     Some("paired") => "WHERE raw_count > 0 AND jpg_count > 0",
                     Some("rawOnly") => "WHERE raw_count > 0 AND jpg_count = 0",
                     Some("jpgOnly") => "WHERE raw_count = 0 AND jpg_count > 0",
-                    _ => "",
+                    _ => "WHERE raw_count > 0 OR jpg_count > 0",
                 },
                 params![],
             )?,
@@ -245,7 +245,7 @@ impl Database {
               COALESCE(SUM(CASE WHEN raw_count > 0 AND jpg_count = 0 THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN raw_count = 0 AND jpg_count > 0 THEN 1 ELSE 0 END), 0)
             FROM photo_groups
-            WHERE root_path = ?1
+            WHERE root_path = ?1 AND (raw_count > 0 OR jpg_count > 0)
             ",
             params![root_path],
             |row| {
