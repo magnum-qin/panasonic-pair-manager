@@ -1,20 +1,25 @@
 from __future__ import annotations
 
-from collections import deque
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ICON_DIR = ROOT / "src-tauri" / "icons"
 SOURCE_PATH = ICON_DIR / "icon-source.png"
-ICO_PATH = ICON_DIR / "icon.ico"
-PNG_PATH = ICON_DIR / "icon-256.png"
-SHEET_PATH = ICON_DIR / "icon-preview-sheet.png"
-SVG_PATH = ICON_DIR / "icon.svg"
+APP_ICON_PATH = ICON_DIR / "app-icon.png"
+PNG_256_PATH = ICON_DIR / "icon-256.png"
+PREVIEW_PATH = ICON_DIR / "icon-preview-sheet.png"
 
-ICON_SIZES = [16, 24, 32, 48, 64, 128, 256]
+PANASONIC_BLUE = (0, 84, 166)
+DEEP_BLUE = (0, 42, 110)
+SKY = (30, 198, 230)
+INK = (11, 30, 58)
+
+
+def lerp(a: int, b: int, t: float) -> int:
+    return round(a + (b - a) * t)
 
 
 def font(size: int, bold: bool = False) -> ImageFont.ImageFont:
@@ -26,218 +31,165 @@ def font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def is_checker_background(pixel: tuple[int, int, int]) -> bool:
-    red, green, blue = pixel
-    average = (red + green + blue) / 3
-    neutral = max(red, green, blue) - min(red, green, blue) <= 10
-    return neutral and average >= 238
-
-
-def fill_mask_holes(mask: Image.Image) -> Image.Image:
-    width, height = mask.size
-    mask_pixels = mask.load()
-    seen = bytearray(width * height)
-    queue: deque[tuple[int, int]] = deque()
-
-    def push(x: int, y: int) -> None:
-        index = y * width + x
-        if seen[index] or mask_pixels[x, y] > 0:
-            return
-        seen[index] = 1
-        queue.append((x, y))
-
-    for x in range(width):
-        push(x, 0)
-        push(x, height - 1)
-    for y in range(height):
-        push(0, y)
-        push(width - 1, y)
-
-    while queue:
-        x, y = queue.popleft()
-        if x > 0:
-            push(x - 1, y)
-        if x < width - 1:
-            push(x + 1, y)
-        if y > 0:
-            push(x, y - 1)
-        if y < height - 1:
-            push(x, y + 1)
-
-    filled = Image.new("L", (width, height), 255)
-    filled_pixels = filled.load()
-    for y in range(height):
-        offset = y * width
-        for x in range(width):
-            if seen[offset + x]:
-                filled_pixels[x, y] = 0
-    return filled
-
-
-def artwork_alpha_mask(image: Image.Image) -> Image.Image:
-    rgb = image.convert("RGB")
-    width, height = rgb.size
-    pixels = rgb.load()
-    mask = Image.new("L", (width, height), 255)
-    mask_pixels = mask.load()
-    for y in range(height):
-        for x in range(width):
-            if is_checker_background(pixels[x, y]):
-                mask_pixels[x, y] = 0
-
+def rounded_mask(size: tuple[int, int], radius: int) -> Image.Image:
+    mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=radius, fill=255)
+    return mask
 
-    def sx(value: int) -> int:
-        return round(value * width / 1254)
 
-    def sy(value: int) -> int:
-        return round(value * height / 1254)
+def gradient_rect(
+    size: tuple[int, int],
+    top_left: tuple[int, int, int],
+    bottom_right: tuple[int, int, int],
+) -> Image.Image:
+    width, height = size
+    image = Image.new("RGBA", size)
+    px = image.load()
+    for y in range(height):
+        y_t = y / max(1, height - 1)
+        for x in range(width):
+            x_t = x / max(1, width - 1)
+            t = (x_t * 0.52) + (y_t * 0.48)
+            glow = max(0, 1 - ((x_t - 0.2) ** 2 + (y_t - 0.08) ** 2) * 4)
+            px[x, y] = (
+                min(255, lerp(top_left[0], bottom_right[0], t) + round(22 * glow)),
+                min(255, lerp(top_left[1], bottom_right[1], t) + round(26 * glow)),
+                min(255, lerp(top_left[2], bottom_right[2], t) + round(28 * glow)),
+                255,
+            )
+    return image
 
-    # The source artwork is a generated raster with a baked checkerboard
-    # background. Preserve the bright document surfaces explicitly; their color
-    # is intentionally close to the checkerboard and cannot be separated by
-    # thresholding alone.
-    draw.rounded_rectangle(
-        (sx(742), sy(354), sx(1026), sy(856)),
-        radius=sx(45),
-        fill=255,
+
+def paste_rounded(
+    canvas: Image.Image,
+    box: tuple[int, int, int, int],
+    radius: int,
+    fill: Image.Image | tuple[int, int, int, int],
+) -> None:
+    width = box[2] - box[0]
+    height = box[3] - box[1]
+    mask = rounded_mask((width, height), radius)
+    layer = fill if isinstance(fill, Image.Image) else Image.new("RGBA", (width, height), fill)
+    layer.putalpha(mask)
+    canvas.alpha_composite(layer, (box[0], box[1]))
+
+
+def drop_shadow(
+    canvas: Image.Image,
+    box: tuple[int, int, int, int],
+    radius: int,
+    offset: tuple[int, int],
+    blur: int,
+    alpha: int,
+) -> None:
+    width = box[2] - box[0]
+    height = box[3] - box[1]
+    mask = rounded_mask((width, height), radius)
+    shadow = Image.new("RGBA", (width, height), (0, 25, 64, 0))
+    shadow.putalpha(mask.filter(ImageFilter.GaussianBlur(blur)).point(lambda value: value * alpha // 255))
+    canvas.alpha_composite(shadow, (box[0] + offset[0], box[1] + offset[1]))
+
+
+def draw_source_icon(size: int = 1024) -> Image.Image:
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image, "RGBA")
+    scale = size / 1024
+
+    def n(value: int) -> int:
+        return round(value * scale)
+
+    plate = (n(72), n(72), n(952), n(952))
+    radius = n(210)
+    drop_shadow(image, plate, radius, (0, n(38)), n(42), 82)
+    drop_shadow(image, plate, radius, (0, n(10)), n(12), 26)
+    paste_rounded(
+        image,
+        plate,
+        radius,
+        gradient_rect((plate[2] - plate[0], plate[3] - plate[1]), (245, 253, 255), (208, 232, 246)),
     )
+    draw.rounded_rectangle(plate, radius=radius, outline=(255, 255, 255, 178), width=n(8))
+
+    # A restrained Fluent-style base accent anchors the icon on Windows taskbars.
+    accent = (plate[0] + n(74), plate[3] - n(130), plate[2] - n(74), plate[3] - n(66))
+    draw.rounded_rectangle(accent, radius=n(32), fill=(*PANASONIC_BLUE, 235))
     draw.rounded_rectangle(
-        (sx(236), sy(275), sx(876), sy(838)),
-        radius=sx(42),
-        fill=255,
+        (accent[0], accent[1], accent[0] + n(270), accent[3]),
+        radius=n(32),
+        fill=(*SKY, 255),
+    )
+
+    # Two abstract photo/file planes: simple enough to stay legible at 24-32px.
+    back = (n(364), n(248), n(708), n(666))
+    front = (n(236), n(312), n(642), n(732))
+    drop_shadow(image, back, n(58), (n(20), n(26)), n(24), 38)
+    paste_rounded(image, back, n(58), (220, 236, 251, 245))
+    draw.polygon(
+        [(back[2] - n(104), back[1]), (back[2], back[1] + n(104)), (back[2] - n(104), back[1] + n(104))],
+        fill=(180, 207, 237, 255),
+    )
+
+    drop_shadow(image, front, n(62), (0, n(24)), n(26), 56)
+    paste_rounded(image, front, n(62), (250, 253, 255, 252))
+    draw.rounded_rectangle(front, radius=n(62), outline=(255, 255, 255, 180), width=n(7))
+    draw.circle((n(318), n(398)), n(46), fill=(0, 122, 229, 255))
+    draw.polygon(
+        [(n(268), n(642)), (n(400), n(494)), (n(512), n(642))],
+        fill=(*SKY, 255),
     )
     draw.polygon(
-        [
-            (sx(742), sy(275)),
-            (sx(876), sy(410)),
-            (sx(876), sy(838)),
-            (sx(236), sy(838)),
-            (sx(236), sy(336)),
-            (sx(276), sy(275)),
-        ],
-        fill=255,
+        [(n(398), n(642)), (n(548), n(454)), (n(638), n(642))],
+        fill=(*PANASONIC_BLUE, 255),
     )
 
-    # Close small checkerboard gaps around the white document, then fill the
-    # enclosed interior so bright paper remains part of the icon.
-    closed = mask.filter(ImageFilter.MaxFilter(17)).filter(ImageFilter.MinFilter(17))
-    filled = fill_mask_holes(closed)
-    return filled.filter(ImageFilter.GaussianBlur(1.1)).point(lambda value: 0 if value < 10 else value)
+    # Abstract pairing mark, deliberately thick for small sizes.
+    link_color = (255, 255, 255, 246)
+    outline = (*PANASONIC_BLUE, 255)
+    draw.rounded_rectangle((n(254), n(678), n(492), n(812)), radius=n(67), fill=outline)
+    draw.rounded_rectangle((n(532), n(678), n(770), n(812)), radius=n(67), fill=outline)
+    draw.rounded_rectangle((n(302), n(724), n(444), n(766)), radius=n(21), fill=link_color)
+    draw.rounded_rectangle((n(580), n(724), n(722), n(766)), radius=n(21), fill=link_color)
+    draw.rounded_rectangle((n(420), n(724), n(604), n(766)), radius=n(21), fill=outline)
+    draw.rounded_rectangle((n(450), n(734), n(574), n(756)), radius=n(11), fill=link_color)
+
+    # A compact SD-card cue in the lower-right, more symbolic than literal.
+    card = (n(642), n(560), n(830), n(808))
+    drop_shadow(image, card, n(36), (n(10), n(18)), n(18), 64)
+    paste_rounded(image, card, n(36), gradient_rect((card[2] - card[0], card[3] - card[1]), (0, 93, 180), DEEP_BLUE))
+    draw.rounded_rectangle((n(692), n(604), n(800), n(636)), radius=n(9), fill=(228, 244, 255, 236))
+    draw.rounded_rectangle((n(678), n(656), n(800), n(688)), radius=n(9), fill=(228, 244, 255, 224))
+    draw.polygon([(n(736), n(728)), (n(772), n(768)), (n(700), n(768))], fill=(57, 171, 255, 255))
+
+    return image
 
 
-def extract_artwork(source: Image.Image, compact: bool = False) -> Image.Image:
-    rgba = source.convert("RGBA")
-    alpha = artwork_alpha_mask(source)
-    rgba.putalpha(alpha)
-    rgb_pixels = rgba.load()
-    alpha_pixels = alpha.load()
-    for y in range(rgba.height):
-        for x in range(rgba.width):
-            if alpha_pixels[x, y] > 0 and is_checker_background(rgb_pixels[x, y][:3]):
-                rgb_pixels[x, y] = (248, 252, 255, alpha_pixels[x, y])
-
-    bbox = alpha.getbbox()
-    if not bbox:
-        raise RuntimeError("Source icon appears to be empty after background removal.")
-
-    if compact:
-        width, height = rgba.size
-        # Tighten the small-size artwork around the high-contrast foreground:
-        # photo mark, link mark, and SD card. The full document stack is too
-        # detailed for taskbar-scale rendering.
-        left = round(width * 0.22)
-        top = round(height * 0.28)
-        right = round(width * 0.84)
-        bottom = round(height * 0.78)
-        compact_alpha = alpha.crop((left, top, right, bottom))
-        compact_bbox = compact_alpha.getbbox()
-        if compact_bbox:
-            cl, ct, cr, cb = compact_bbox
-            left += cl
-            top += ct
-            right = left - cl + cr
-            bottom = top - ct + cb
-    else:
-        left, top, right, bottom = bbox
-
-    padding = round(max(right - left, bottom - top) * (0.015 if compact else 0.035))
-    left = max(0, left - padding)
-    top = max(0, top - padding)
-    right = min(rgba.width, right + padding)
-    bottom = min(rgba.height, bottom + padding)
-    return rgba.crop((left, top, right, bottom))
-
-
-def compose_icon(artwork: Image.Image, size: int) -> Image.Image:
-    supersample = 4 if size <= 64 else 2 if size < 256 else 1
-    canvas_size = size * supersample
-    canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
-
-    inset_ratio = 0.055 if size >= 128 else 0.015 if size >= 48 else 0
-    target = round(canvas_size * (1 - inset_ratio * 2))
-    fitted = ImageOps.contain(artwork, (target, target), method=Image.Resampling.LANCZOS)
-    x = (canvas_size - fitted.width) // 2
-    y = (canvas_size - fitted.height) // 2
-    canvas.alpha_composite(fitted, (x, y))
-
-    if supersample > 1:
-        canvas = canvas.resize((size, size), Image.Resampling.LANCZOS)
-
-    if size <= 32:
-        canvas = canvas.filter(ImageFilter.UnsharpMask(radius=0.65, percent=190, threshold=2))
-    elif size <= 64:
-        canvas = canvas.filter(ImageFilter.UnsharpMask(radius=0.8, percent=145, threshold=2))
-    else:
-        canvas = canvas.filter(ImageFilter.UnsharpMask(radius=0.6, percent=90, threshold=3))
-    return canvas
-
-
-def write_preview_sheet(images: dict[int, Image.Image]) -> None:
+def write_preview_sheet(source: Image.Image) -> None:
     sizes = [256, 128, 64, 48, 32, 24, 16]
-    width = 18 + sum(size + 24 for size in sizes)
-    sheet = Image.new("RGBA", (width, 330), (235, 241, 247, 255))
+    sheet = Image.new("RGBA", (760, 330), (235, 241, 247, 255))
     draw = ImageDraw.Draw(sheet)
-    draw.text((18, 16), "Windows icon sizes", fill=(38, 50, 64, 255), font=font(18, True))
+    draw.text((18, 18), "Abstract Windows icon source", fill=(*INK, 255), font=font(18, True))
 
     x = 18
-    baseline = 290
-    for size in sizes:
-        icon = images[size]
-        y = 42 + (256 - size) // 2
+    for icon_size in sizes:
+        icon = source.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
+        if icon_size <= 64:
+            icon = icon.filter(ImageFilter.UnsharpMask(radius=0.6, percent=135, threshold=2))
+        y = 52 + (256 - icon_size) // 2
         sheet.alpha_composite(icon, (x, y))
-        draw.text((x, baseline), f"{size}px", fill=(76, 88, 102, 255), font=font(12))
-        x += size + 22
-    sheet.save(SHEET_PATH)
-
-
-def write_svg() -> None:
-    SVG_PATH.write_text(
-        """<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <image href="icon-256.png" width="256" height="256" preserveAspectRatio="xMidYMid meet"/>
-</svg>
-""",
-        encoding="utf-8",
-    )
+        draw.text((x, 294), f"{icon_size}px", fill=(76, 88, 102, 255), font=font(12))
+        x += icon_size + 24
+    PREVIEW_PATH.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(PREVIEW_PATH)
 
 
 def main() -> None:
-    if not SOURCE_PATH.exists():
-        raise FileNotFoundError(f"Missing source artwork: {SOURCE_PATH}")
-
     ICON_DIR.mkdir(parents=True, exist_ok=True)
-    source = Image.open(SOURCE_PATH)
-    artwork = extract_artwork(source)
-    compact_artwork = extract_artwork(source, compact=True)
-    images = {
-        size: compose_icon(compact_artwork if size <= 64 else artwork, size)
-        for size in ICON_SIZES
-    }
-
-    images[256].save(PNG_PATH)
-    images[256].save(ICO_PATH, format="ICO", sizes=[(size, size) for size in ICON_SIZES])
-    write_preview_sheet(images)
-    write_svg()
+    source = draw_source_icon()
+    source.save(SOURCE_PATH)
+    source.save(APP_ICON_PATH)
+    source.resize((256, 256), Image.Resampling.LANCZOS).save(PNG_256_PATH)
+    write_preview_sheet(source)
 
 
 if __name__ == "__main__":
