@@ -706,7 +706,7 @@ export default function App() {
       }
       const previewWindow = new WebviewWindow(PREVIEW_WINDOW_LABEL, {
         center: true,
-        decorations: true,
+        decorations: false,
         focus: true,
         height: 820,
         minHeight: 520,
@@ -1467,7 +1467,11 @@ function PreviewWindow() {
   const [language] = useState<LanguageCode>(() =>
     normalizeLanguage(window.localStorage.getItem("ppm.language")),
   );
+  const [theme] = useState<ThemeCode>(() =>
+    normalizeTheme(window.localStorage.getItem("ppm.theme")),
+  );
   const t = useMemo(() => makeTranslator(language), [language]);
+  const currentWindow = useMemo(() => getCurrentWebviewWindow(), []);
   const [previewState, setPreviewState] = useState<PreviewWindowState>(loadPreviewWindowState);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -1507,8 +1511,20 @@ function PreviewWindow() {
   );
 
   const closeWindow = useCallback(() => {
-    getCurrentWebviewWindow().close();
-  }, []);
+    currentWindow.close();
+  }, [currentWindow]);
+
+  const minimizeWindow = useCallback(() => {
+    currentWindow.minimize();
+  }, [currentWindow]);
+
+  const toggleMaximizeWindow = useCallback(() => {
+    currentWindow.toggleMaximize();
+  }, [currentWindow]);
+
+  const dragWindow = useCallback(() => {
+    currentWindow.startDragging();
+  }, [currentWindow]);
 
   const openExternal = useCallback(async () => {
     if (!currentId) return;
@@ -1524,6 +1540,10 @@ function PreviewWindow() {
   }, [currentId]);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen<PreviewWindowState>("preview-window-state", (event) => {
       setPreviewState(event.payload);
@@ -1535,9 +1555,9 @@ function PreviewWindow() {
 
   useEffect(() => {
     if (group?.stem) {
-      getCurrentWebviewWindow().setTitle(`${group.stem} - Panasonic Pair Manager`);
+      currentWindow.setTitle(`${group.stem} - Panasonic Pair Manager`);
     }
-  }, [group?.stem]);
+  }, [currentWindow, group?.stem]);
 
   useEffect(() => {
     if (!canNavigate) return;
@@ -1583,7 +1603,7 @@ function PreviewWindow() {
         role="dialog"
         tabIndex={-1}
       >
-        <header className="preview-toolbar">
+        <header className="preview-toolbar" onMouseDown={dragWindow}>
           <div className="preview-title" title={group?.stem ?? ""}>
             <strong>{group?.stem ?? t("preview.title")}</strong>
             <span>
@@ -1595,9 +1615,17 @@ function PreviewWindow() {
               <ExternalLink size={15} />
               {t("preview.openExternal")}
             </Button>
-            <IconButton label={t("action.close")} onClick={closeWindow}>
-              <X size={18} />
-            </IconButton>
+            <div className="preview-window-controls" onMouseDown={(event) => event.stopPropagation()}>
+              <button aria-label="Minimize" onClick={minimizeWindow} type="button">
+                <span />
+              </button>
+              <button aria-label="Maximize" onClick={toggleMaximizeWindow} type="button">
+                <span />
+              </button>
+              <button aria-label={t("action.close")} className="close" onClick={closeWindow} type="button">
+                <X size={16} />
+              </button>
+            </div>
           </div>
         </header>
 

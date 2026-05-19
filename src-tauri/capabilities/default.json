@@ -3,5 +3,12 @@
   "identifier": "default",
   "description": "Default app permissions",
   "windows": ["main", "photo-preview"],
-  "permissions": ["core:default", "core:webview:allow-create-webview-window"]
+  "permissions": [
+    "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize"
+  ]
 }
