@@ -133,7 +133,7 @@ async fn get_photo_thumbnail(
         }
 
         std::fs::create_dir_all(&thumbnail_dir).map_err(|error| error.to_string())?;
-        let size = max_size.clamp(160, 900);
+        let size = max_size.clamp(160, 2400);
         let cache_path = thumbnail_dir.join(format!(
             "{}-{}-{}.jpg",
             stable_hash(&file.path),

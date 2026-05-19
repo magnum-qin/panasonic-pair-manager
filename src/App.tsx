@@ -11,6 +11,8 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   FileText,
   FolderPlus,
@@ -24,6 +26,7 @@ import {
   Settings,
   SquareCheckBig,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -41,6 +44,7 @@ import {
   deletePhotoGroups,
   getPhotoGroup,
   getPhotoGroupMetadata,
+  getPhotoThumbnail,
   getScanSummary,
   getThumbnailCacheStats,
   hasScanForRoot,
@@ -52,6 +56,7 @@ import {
   scanRoot,
   selectRootFolder,
 } from "./api";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { Button } from "./components/Button";
 import { IconButton } from "./components/IconButton";
 import { PhotoGrid } from "./components/PhotoGrid";
@@ -153,6 +158,7 @@ export default function App() {
     x: number;
     y: number;
   } | null>(null);
+  const [previewId, setPreviewId] = useState("");
   const [manualRoots, setManualRoots] = useState<string[]>(loadStoredManualRoots);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [cardSize, setCardSize] = useState(() => {
@@ -479,11 +485,13 @@ export default function App() {
     sourceWasScanned,
     t,
   ]);
-  const modalOpen = aboutOpen || settingsOpen || deleteOpen;
+  const modalOpen = aboutOpen || settingsOpen || deleteOpen || Boolean(previewId);
   const selectedGroups = useMemo(
     () => visibleGroups.filter((group) => selected.has(group.id)),
     [selected, visibleGroups],
   );
+  const previewIndex = previewId ? visibleGroups.findIndex((group) => group.id === previewId) : -1;
+  const previewGroup = previewIndex >= 0 ? visibleGroups[previewIndex] : null;
   const selectedIds = useMemo(() => [...selected], [selected]);
   const deleteDetailQueries = useQueries({
     queries: selectedIds.map((id) => ({
@@ -649,6 +657,39 @@ export default function App() {
     deleteMutation.mutate([...selected]);
   }, [deleteMutation, selected]);
 
+  const openPreview = useCallback(
+    (id: string, force = false) => {
+      if (selectionModeRef.current && !force) return;
+      setContextMenu(null);
+      rememberActiveGroup(id);
+      setPreviewId(id);
+      queryClient.prefetchQuery({
+        queryFn: () => getPhotoThumbnail(id, 1800),
+        queryKey: ["photo-thumbnail", id, 1800],
+      });
+    },
+    [queryClient, rememberActiveGroup],
+  );
+
+  const closePreview = useCallback(() => {
+    setPreviewId("");
+  }, []);
+
+  const movePreview = useCallback(
+    (direction: -1 | 1) => {
+      if (previewIndex < 0 || !visibleGroups.length) return;
+      const nextIndex = (previewIndex + direction + visibleGroups.length) % visibleGroups.length;
+      const nextGroup = visibleGroups[nextIndex];
+      rememberActiveGroup(nextGroup.id);
+      setPreviewId(nextGroup.id);
+      queryClient.prefetchQuery({
+        queryFn: () => getPhotoThumbnail(nextGroup.id, 1800),
+        queryKey: ["photo-thumbnail", nextGroup.id, 1800],
+      });
+    },
+    [previewIndex, queryClient, rememberActiveGroup, visibleGroups],
+  );
+
   const openGroup = useCallback(
     async (id: string, force = false) => {
       if (selectionModeRef.current && !force) return;
@@ -695,13 +736,33 @@ export default function App() {
   }, [selectionMode]);
 
   useEffect(() => {
+    if (!previewId) return;
+    if (visibleGroups.some((group) => group.id === previewId)) return;
+    setPreviewId("");
+  }, [previewId, visibleGroups]);
+
+  useEffect(() => {
+    if (!previewId || previewIndex < 0 || visibleGroups.length < 2) return;
+    const adjacent = [
+      visibleGroups[(previewIndex - 1 + visibleGroups.length) % visibleGroups.length],
+      visibleGroups[(previewIndex + 1) % visibleGroups.length],
+    ];
+    adjacent.forEach((group) => {
+      queryClient.prefetchQuery({
+        queryFn: () => getPhotoThumbnail(group.id, 1800),
+        queryKey: ["photo-thumbnail", group.id, 1800],
+      });
+    });
+  }, [previewId, previewIndex, queryClient, visibleGroups]);
+
+  useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       const target = event.target;
       const isEditable =
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
         (target instanceof HTMLElement && target.isContentEditable);
-      if (isEditable || !hasSource || !visibleGroups.length) return;
+      if (isEditable || previewId || !hasSource || !visibleGroups.length) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         event.preventDefault();
         setSelectionMode(true);
@@ -711,7 +772,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [hasSource, visibleGroups]);
+  }, [hasSource, previewId, visibleGroups]);
 
   useEffect(() => {
     return () => window.clearTimeout(refreshTimerRef.current);
@@ -994,7 +1055,7 @@ export default function App() {
           onContextMenu={openPhotoContextMenu}
           onEmptyAction={chooseFolder}
           onLoadMore={loadMoreGroups}
-          onOpen={openGroup}
+          onOpen={openPreview}
           onToggle={toggleSelected}
           photoGroupsLabel={t("gallery.photoGroups", { count: visibleGroupCount })}
           scrollToContinueLabel={t("gallery.scrollToContinue")}
@@ -1138,6 +1199,18 @@ export default function App() {
           t={t}
           x={contextMenu.x}
           y={contextMenu.y}
+        />
+      )}
+
+      {previewGroup && (
+        <PhotoPreview
+          canNavigate={visibleGroups.length > 1}
+          group={previewGroup}
+          onClose={closePreview}
+          onNext={() => movePreview(1)}
+          onOpenExternal={() => openGroup(previewGroup.id, true)}
+          onPrevious={() => movePreview(-1)}
+          t={t}
         />
       )}
 
@@ -1384,6 +1457,141 @@ function AccessibleModal({
         onKeyDown={handleKeyDown}
       >
         {children}
+      </div>
+    </div>
+  );
+}
+
+function PhotoPreview({
+  canNavigate,
+  group,
+  onClose,
+  onNext,
+  onOpenExternal,
+  onPrevious,
+  t,
+}: {
+  canNavigate: boolean;
+  group: PhotoGroup;
+  onClose: () => void;
+  onNext: () => void;
+  onOpenExternal: () => void;
+  onPrevious: () => void;
+  t: ReturnType<typeof makeTranslator>;
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const previewQuery = useQuery({
+    queryFn: () => getPhotoThumbnail(group.id, 1800),
+    queryKey: ["photo-thumbnail", group.id, 1800],
+    staleTime: Infinity,
+  });
+  const previewPath = previewQuery.data;
+
+  useEffect(() => {
+    setLoaded(false);
+  }, [previewPath]);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, [group.id]);
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key === "ArrowLeft" && canNavigate) {
+      event.preventDefault();
+      onPrevious();
+      return;
+    }
+    if (event.key === "ArrowRight" && canNavigate) {
+      event.preventDefault();
+      onNext();
+    }
+  };
+
+  return (
+    <div
+      className="preview-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        aria-label={t("preview.title")}
+        aria-modal="true"
+        className="preview-dialog"
+        onKeyDown={handleKeyDown}
+        ref={dialogRef}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <header className="preview-toolbar">
+          <div className="preview-title" title={group.stem}>
+            <strong>{group.stem}</strong>
+            <span>
+              {group.folderName} · {formatBytes(group.totalSize)}
+            </span>
+          </div>
+          <div className="preview-actions">
+            <Button onClick={onOpenExternal}>
+              <ExternalLink size={15} />
+              {t("preview.openExternal")}
+            </Button>
+            <IconButton label={t("action.close")} onClick={onClose}>
+              <X size={18} />
+            </IconButton>
+          </div>
+        </header>
+
+        <div className="preview-stage">
+          {canNavigate ? (
+            <button
+              aria-label={t("preview.previous")}
+              className="preview-nav previous"
+              onClick={onPrevious}
+              type="button"
+            >
+              <ChevronLeft size={28} />
+            </button>
+          ) : null}
+
+          <div className="preview-image-frame">
+            {previewPath ? (
+              <img
+                className={loaded ? "loaded" : ""}
+                src={convertFileSrc(previewPath)}
+                alt=""
+                onLoad={() => setLoaded(true)}
+              />
+            ) : previewQuery.isFetching ? (
+              <div className="preview-loading">
+                <span />
+                {t("preview.loading")}
+              </div>
+            ) : (
+              <div className="preview-empty">
+                <Image size={42} />
+                <strong>{t("preview.unavailable")}</strong>
+                <span>{t("preview.unavailableDescription")}</span>
+              </div>
+            )}
+          </div>
+
+          {canNavigate ? (
+            <button
+              aria-label={t("preview.next")}
+              className="preview-nav next"
+              onClick={onNext}
+              type="button"
+            >
+              <ChevronRight size={28} />
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );

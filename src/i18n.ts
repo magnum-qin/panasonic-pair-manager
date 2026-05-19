@@ -82,6 +82,13 @@ export type TranslationKey =
   | "metadata.source"
   | "metadata.sourceEmpty"
   | "metadata.unknown"
+  | "preview.loading"
+  | "preview.next"
+  | "preview.openExternal"
+  | "preview.previous"
+  | "preview.title"
+  | "preview.unavailable"
+  | "preview.unavailableDescription"
   | "setting.language"
   | "setting.cacheFiles"
   | "setting.clearCache"
@@ -196,6 +203,13 @@ const en: TranslationMap = {
   "metadata.source": "Metadata Source",
   "metadata.sourceEmpty": "No metadata source file.",
   "metadata.unknown": "Unknown",
+  "preview.loading": "Preparing preview...",
+  "preview.next": "Next photo",
+  "preview.openExternal": "Open in system app",
+  "preview.previous": "Previous photo",
+  "preview.title": "Photo Preview",
+  "preview.unavailable": "Preview unavailable",
+  "preview.unavailableDescription": "This RAW file has no readable embedded preview. Open it in the system app if needed.",
   "setting.language": "Language",
   "setting.cacheFiles": "{count} files",
   "setting.clearCache": "Clear",
@@ -303,6 +317,13 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "metadata.source": "元数据来源",
     "metadata.sourceEmpty": "没有元数据来源文件。",
     "metadata.unknown": "未知",
+    "preview.loading": "正在准备预览...",
+    "preview.next": "下一张照片",
+    "preview.openExternal": "用系统应用打开",
+    "preview.previous": "上一张照片",
+    "preview.title": "照片预览",
+    "preview.unavailable": "预览不可用",
+    "preview.unavailableDescription": "这个 RAW 文件没有可读取的内嵌预览。需要时可用系统应用打开。",
     "setting.language": "语言",
     "setting.cacheFiles": "{count} 个文件",
     "setting.clearCache": "清理",
@@ -407,6 +428,13 @@ const translations: Record<LanguageCode, TranslationMap> = {
     "metadata.source": "中繼資料來源",
     "metadata.sourceEmpty": "沒有中繼資料來源檔案。",
     "metadata.unknown": "未知",
+    "preview.loading": "正在準備預覽...",
+    "preview.next": "下一張照片",
+    "preview.openExternal": "用系統應用開啟",
+    "preview.previous": "上一張照片",
+    "preview.title": "照片預覽",
+    "preview.unavailable": "預覽不可用",
+    "preview.unavailableDescription": "這個 RAW 檔沒有可讀取的內嵌預覽。需要時可用系統應用開啟。",
     "setting.language": "語言",
     "setting.cacheFiles": "{count} 個檔案",
     "setting.clearCache": "清理",
