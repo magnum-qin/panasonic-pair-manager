@@ -1,21 +1,18 @@
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ICON_DIR = ROOT / "src-tauri" / "icons"
+INPUT_PATH = ICON_DIR / "icon-input.png"
 SOURCE_PATH = ICON_DIR / "icon-source.png"
 APP_ICON_PATH = ICON_DIR / "app-icon.png"
 PNG_256_PATH = ICON_DIR / "icon-256.png"
 PREVIEW_PATH = ICON_DIR / "icon-preview-sheet.png"
-
-BLUE = (0, 84, 166)
-DEEP_BLUE = (0, 45, 124)
-CYAN = (22, 196, 226)
-LIGHT = (102, 214, 244)
 
 
 def font(size: int, bold: bool = False) -> ImageFont.ImageFont:
@@ -27,128 +24,133 @@ def font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def lerp(a: int, b: int, t: float) -> int:
-    return round(a + (b - a) * t)
+def is_checker_pixel(pixel: tuple[int, int, int]) -> bool:
+    red, green, blue = pixel
+    average = (red + green + blue) / 3
+    neutral = max(red, green, blue) - min(red, green, blue) <= 12
+    return neutral and average >= 238
 
 
-def gradient(size: tuple[int, int], start: tuple[int, int, int], end: tuple[int, int, int]) -> Image.Image:
-    width, height = size
-    image = Image.new("RGBA", size)
-    px = image.load()
+def fill_holes(mask: Image.Image) -> Image.Image:
+    width, height = mask.size
+    pixels = mask.load()
+    seen = bytearray(width * height)
+    queue: deque[tuple[int, int]] = deque()
+
+    def push(x: int, y: int) -> None:
+        index = y * width + x
+        if seen[index] or pixels[x, y] > 0:
+            return
+        seen[index] = 1
+        queue.append((x, y))
+
+    for x in range(width):
+        push(x, 0)
+        push(x, height - 1)
     for y in range(height):
-        y_t = y / max(1, height - 1)
+        push(0, y)
+        push(width - 1, y)
+
+    while queue:
+        x, y = queue.popleft()
+        if x > 0:
+            push(x - 1, y)
+        if x < width - 1:
+            push(x + 1, y)
+        if y > 0:
+            push(x, y - 1)
+        if y < height - 1:
+            push(x, y + 1)
+
+    filled = Image.new("L", (width, height), 255)
+    filled_pixels = filled.load()
+    for y in range(height):
+        offset = y * width
         for x in range(width):
-            x_t = x / max(1, width - 1)
-            t = x_t * 0.55 + y_t * 0.45
-            glow = max(0, 1 - ((x_t - 0.18) ** 2 + (y_t - 0.08) ** 2) * 5)
-            px[x, y] = (
-                min(255, lerp(start[0], end[0], t) + round(24 * glow)),
-                min(255, lerp(start[1], end[1], t) + round(30 * glow)),
-                min(255, lerp(start[2], end[2], t) + round(34 * glow)),
-                255,
-            )
-    return image
+            if seen[offset + x]:
+                filled_pixels[x, y] = 0
+    return filled
 
 
-def rounded_mask(size: tuple[int, int], radius: int) -> Image.Image:
-    mask = Image.new("L", size, 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=radius, fill=255)
-    return mask
+def remove_checker_background(image: Image.Image) -> Image.Image:
+    rgb = image.convert("RGB")
+    width, height = rgb.size
+    source_pixels = rgb.load()
+    mask = Image.new("L", (width, height), 255)
+    mask_pixels = mask.load()
+
+    for y in range(height):
+        for x in range(width):
+            if is_checker_pixel(source_pixels[x, y]):
+                mask_pixels[x, y] = 0
+
+    # The artwork contains white camera surfaces that are close to the
+    # checkerboard color. Close the silhouette first, then fill enclosed holes.
+    silhouette = mask.filter(ImageFilter.MaxFilter(23)).filter(ImageFilter.MinFilter(23))
+    alpha = fill_holes(silhouette)
+    alpha = alpha.filter(ImageFilter.GaussianBlur(1.2)).point(lambda value: 0 if value < 10 else value)
+
+    rgba = rgb.convert("RGBA")
+    rgba.putalpha(alpha)
+    pixels = rgba.load()
+    alpha_pixels = alpha.load()
+    for y in range(height):
+        for x in range(width):
+            if alpha_pixels[x, y] > 0 and is_checker_pixel(source_pixels[x, y]):
+                pixels[x, y] = (248, 252, 255, alpha_pixels[x, y])
+
+    bbox = alpha.getbbox()
+    if not bbox:
+        raise RuntimeError("Icon input appears empty after background removal.")
+
+    left, top, right, bottom = bbox
+    padding = round(max(right - left, bottom - top) * 0.035)
+    crop = rgba.crop(
+        (
+            max(0, left - padding),
+            max(0, top - padding),
+            min(width, right + padding),
+            min(height, bottom + padding),
+        ),
+    )
+    return crop
 
 
-def paste_round(
-    canvas: Image.Image,
-    box: tuple[int, int, int, int],
-    radius: int,
-    fill: Image.Image | tuple[int, int, int, int],
-) -> None:
-    size = (box[2] - box[0], box[3] - box[1])
-    layer = fill if isinstance(fill, Image.Image) else Image.new("RGBA", size, fill)
-    layer.putalpha(rounded_mask(size, radius))
-    canvas.alpha_composite(layer, (box[0], box[1]))
-
-
-def draw_shadow(canvas: Image.Image, box: tuple[int, int, int, int], radius: int, alpha: int) -> None:
-    size = (box[2] - box[0], box[3] - box[1])
-    shadow = Image.new("RGBA", size, (0, 22, 58, 0))
-    shadow.putalpha(rounded_mask(size, radius).filter(ImageFilter.GaussianBlur(28)).point(lambda p: p * alpha // 255))
-    canvas.alpha_composite(shadow, (box[0], box[1] + 36))
-
-
-def line_with_round_caps(
-    draw: ImageDraw.ImageDraw,
-    points: list[tuple[int, int]],
-    width: int,
-    fill: tuple[int, int, int, int],
-) -> None:
-    draw.line(points, fill=fill, width=width, joint="curve")
-    radius = width // 2
-    for x, y in (points[0], points[-1]):
-        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill)
-
-
-def draw_source_icon(size: int = 1024) -> Image.Image:
-    scale = size / 1024
-
-    def n(value: int) -> int:
-        return round(value * scale)
-
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image, "RGBA")
-
-    # One clear launch mark: a soft rounded tile plus two interlocking strokes.
-    # This keeps the metaphor to "pairing" while staying readable at taskbar size.
-    tile = (n(100), n(100), n(924), n(924))
-    radius = n(220)
-    draw_shadow(image, tile, radius, 62)
-    paste_round(image, tile, radius, gradient((tile[2] - tile[0], tile[3] - tile[1]), (245, 253, 255), (218, 237, 250)))
-    draw.rounded_rectangle(tile, radius=radius, outline=(255, 255, 255, 170), width=n(8))
-
-    stroke = n(132)
-    left = [(n(270), n(606)), (n(362), n(490)), (n(510), n(490)), (n(604), n(606))]
-    right = [(n(420), n(606)), (n(514), n(734)), (n(664), n(734)), (n(756), n(606))]
-
-    line_with_round_caps(draw, left, stroke, (*CYAN, 255))
-    line_with_round_caps(draw, right, stroke, (*BLUE, 255))
-
-    # Cut a deliberate negative-space bridge through the overlap so the mark
-    # reads as two paired items instead of a knot.
-    draw.rounded_rectangle((n(430), n(552), n(594), n(660)), radius=n(54), fill=(241, 250, 255, 255))
-    draw.rounded_rectangle((n(456), n(580), n(568), n(632)), radius=n(26), fill=(*DEEP_BLUE, 255))
-
-    # Tiny inner highlight gives the same soft dimensionality as modern Windows
-    # product icons without adding another semantic element.
-    draw.arc((n(214), n(188), n(810), n(790)), 204, 302, fill=(255, 255, 255, 88), width=n(18))
-
-    # A single abstract marker suggests "image set" without becoming a second
-    # illustrated object.
-    draw.circle((n(316), n(352)), n(34), fill=(*LIGHT, 255))
-    return image
+def compose_square_icon(artwork: Image.Image, size: int = 1024) -> Image.Image:
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    target = round(size * 0.9)
+    fitted = ImageOps.contain(artwork, (target, target), method=Image.Resampling.LANCZOS)
+    x = (size - fitted.width) // 2
+    y = (size - fitted.height) // 2
+    canvas.alpha_composite(fitted, (x, y))
+    return canvas
 
 
 def write_preview_sheet(source: Image.Image) -> None:
     sizes = [256, 128, 64, 48, 32, 24, 16]
     sheet = Image.new("RGBA", (760, 330), (235, 241, 247, 255))
     draw = ImageDraw.Draw(sheet)
-    draw.text((18, 18), "Simplified Fluent-style icon", fill=(13, 32, 58, 255), font=font(18, True))
+    draw.text((18, 18), "Transparent source icon", fill=(13, 32, 58, 255), font=font(18, True))
 
     x = 18
     for icon_size in sizes:
         icon = source.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
         if icon_size <= 64:
-            icon = icon.filter(ImageFilter.UnsharpMask(radius=0.55, percent=135, threshold=2))
+            icon = icon.filter(ImageFilter.UnsharpMask(radius=0.55, percent=130, threshold=2))
         y = 52 + (256 - icon_size) // 2
         sheet.alpha_composite(icon, (x, y))
         draw.text((x, 294), f"{icon_size}px", fill=(76, 88, 102, 255), font=font(12))
         x += icon_size + 24
-    PREVIEW_PATH.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(PREVIEW_PATH)
 
 
 def main() -> None:
+    if not INPUT_PATH.exists():
+        raise FileNotFoundError(f"Missing input icon: {INPUT_PATH}")
+
     ICON_DIR.mkdir(parents=True, exist_ok=True)
-    source = draw_source_icon()
+    artwork = remove_checker_background(Image.open(INPUT_PATH))
+    source = compose_square_icon(artwork)
     source.save(SOURCE_PATH)
     source.save(APP_ICON_PATH)
     source.resize((256, 256), Image.Resampling.LANCZOS).save(PNG_256_PATH)
