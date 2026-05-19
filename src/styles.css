@@ -1253,6 +1253,13 @@ button[hidden] {
   z-index: 35;
 }
 
+.preview-window-root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #0f171f;
+}
+
 .preview-dialog {
   width: min(1180px, 100%);
   height: min(780px, calc(100vh - 36px));
@@ -1266,6 +1273,16 @@ button[hidden] {
   color: #f6fbff;
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
   outline: none;
+  animation: preview-window-in 140ms ease-out both;
+}
+
+.preview-window-dialog {
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .preview-toolbar {
@@ -1343,6 +1360,18 @@ button[hidden] {
   object-fit: contain;
   opacity: 0;
   transition: opacity 120ms ease;
+}
+
+@keyframes preview-window-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .preview-image-frame img.loaded {

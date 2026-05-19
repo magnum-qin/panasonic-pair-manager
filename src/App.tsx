@@ -6,7 +6,9 @@ import {
   useQueryClient,
   useQueries,
 } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { emitTo, listen } from "@tauri-apps/api/event";
+import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import {
@@ -56,7 +58,6 @@ import {
   scanRoot,
   selectRootFolder,
 } from "./api";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { Button } from "./components/Button";
 import { IconButton } from "./components/IconButton";
 import { PhotoGrid } from "./components/PhotoGrid";
@@ -85,6 +86,13 @@ type CardSizePreset = (typeof CARD_SIZE_PRESETS)[number]["value"];
 
 const MANUAL_ROOTS_STORAGE_KEY = "ppm.manualRoots";
 const DELETE_FILE_PREVIEW_LIMIT = 18;
+const PREVIEW_WINDOW_LABEL = "photo-preview";
+const PREVIEW_WINDOW_STORAGE_KEY = "ppm.previewWindowState";
+
+interface PreviewWindowState {
+  id: string;
+  ids: string[];
+}
 
 function loadStoredManualRoots() {
   try {
@@ -131,7 +139,30 @@ function dirName(path: string) {
   return index > 0 ? path.slice(0, index) : path;
 }
 
+function isPreviewWindowRoute() {
+  return new URLSearchParams(window.location.search).get("previewWindow") === "1";
+}
+
+function loadPreviewWindowState(): PreviewWindowState {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PREVIEW_WINDOW_STORAGE_KEY) ?? "{}");
+    if (!parsed || typeof parsed.id !== "string") return { id: "", ids: [] };
+    return {
+      id: parsed.id,
+      ids: Array.isArray(parsed.ids)
+        ? parsed.ids.filter((id: unknown): id is string => typeof id === "string")
+        : [],
+    };
+  } catch {
+    return { id: "", ids: [] };
+  }
+}
+
 export default function App() {
+  if (isPreviewWindowRoute()) {
+    return <PreviewWindow />;
+  }
+
   const queryClient = useQueryClient();
   const [rootPath, setRootPath] = useState("");
   const [activeId, setActiveId] = useState("");
@@ -158,7 +189,6 @@ export default function App() {
     x: number;
     y: number;
   } | null>(null);
-  const [previewId, setPreviewId] = useState("");
   const [manualRoots, setManualRoots] = useState<string[]>(loadStoredManualRoots);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [cardSize, setCardSize] = useState(() => {
@@ -485,13 +515,11 @@ export default function App() {
     sourceWasScanned,
     t,
   ]);
-  const modalOpen = aboutOpen || settingsOpen || deleteOpen || Boolean(previewId);
+  const modalOpen = aboutOpen || settingsOpen || deleteOpen;
   const selectedGroups = useMemo(
     () => visibleGroups.filter((group) => selected.has(group.id)),
     [selected, visibleGroups],
   );
-  const previewIndex = previewId ? visibleGroups.findIndex((group) => group.id === previewId) : -1;
-  const previewGroup = previewIndex >= 0 ? visibleGroups[previewIndex] : null;
   const selectedIds = useMemo(() => [...selected], [selected]);
   const deleteDetailQueries = useQueries({
     queries: selectedIds.map((id) => ({
@@ -658,36 +686,40 @@ export default function App() {
   }, [deleteMutation, selected]);
 
   const openPreview = useCallback(
-    (id: string, force = false) => {
+    async (id: string, force = false) => {
       if (selectionModeRef.current && !force) return;
       setContextMenu(null);
       rememberActiveGroup(id);
-      setPreviewId(id);
+      const state = { id, ids: visibleGroups.map((group) => group.id) };
+      window.localStorage.setItem(PREVIEW_WINDOW_STORAGE_KEY, JSON.stringify(state));
       queryClient.prefetchQuery({
-        queryFn: () => getPhotoThumbnail(id, 1800),
-        queryKey: ["photo-thumbnail", id, 1800],
+        queryFn: () => getPhotoGroup(id),
+        queryKey: ["photo-group-detail", id],
+      });
+      const group = visibleGroups.find((item) => item.id === id);
+      const existing = await WebviewWindow.getByLabel(PREVIEW_WINDOW_LABEL);
+      if (existing) {
+        await emitTo(PREVIEW_WINDOW_LABEL, "preview-window-state", state);
+        await existing.setTitle(`${group?.stem ?? "Photo"} - Panasonic Pair Manager`);
+        await existing.setFocus();
+        return;
+      }
+      const previewWindow = new WebviewWindow(PREVIEW_WINDOW_LABEL, {
+        center: true,
+        decorations: true,
+        focus: true,
+        height: 820,
+        minHeight: 520,
+        minWidth: 780,
+        title: "Photo Preview - Panasonic Pair Manager",
+        url: "/?previewWindow=1",
+        width: 1180,
+      });
+      previewWindow.once("tauri://error", (event) => {
+        setMessage(String(event.payload));
       });
     },
-    [queryClient, rememberActiveGroup],
-  );
-
-  const closePreview = useCallback(() => {
-    setPreviewId("");
-  }, []);
-
-  const movePreview = useCallback(
-    (direction: -1 | 1) => {
-      if (previewIndex < 0 || !visibleGroups.length) return;
-      const nextIndex = (previewIndex + direction + visibleGroups.length) % visibleGroups.length;
-      const nextGroup = visibleGroups[nextIndex];
-      rememberActiveGroup(nextGroup.id);
-      setPreviewId(nextGroup.id);
-      queryClient.prefetchQuery({
-        queryFn: () => getPhotoThumbnail(nextGroup.id, 1800),
-        queryKey: ["photo-thumbnail", nextGroup.id, 1800],
-      });
-    },
-    [previewIndex, queryClient, rememberActiveGroup, visibleGroups],
+    [queryClient, rememberActiveGroup, visibleGroups],
   );
 
   const openGroup = useCallback(
@@ -736,33 +768,13 @@ export default function App() {
   }, [selectionMode]);
 
   useEffect(() => {
-    if (!previewId) return;
-    if (visibleGroups.some((group) => group.id === previewId)) return;
-    setPreviewId("");
-  }, [previewId, visibleGroups]);
-
-  useEffect(() => {
-    if (!previewId || previewIndex < 0 || visibleGroups.length < 2) return;
-    const adjacent = [
-      visibleGroups[(previewIndex - 1 + visibleGroups.length) % visibleGroups.length],
-      visibleGroups[(previewIndex + 1) % visibleGroups.length],
-    ];
-    adjacent.forEach((group) => {
-      queryClient.prefetchQuery({
-        queryFn: () => getPhotoThumbnail(group.id, 1800),
-        queryKey: ["photo-thumbnail", group.id, 1800],
-      });
-    });
-  }, [previewId, previewIndex, queryClient, visibleGroups]);
-
-  useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       const target = event.target;
       const isEditable =
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
         (target instanceof HTMLElement && target.isContentEditable);
-      if (isEditable || previewId || !hasSource || !visibleGroups.length) return;
+      if (isEditable || !hasSource || !visibleGroups.length) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         event.preventDefault();
         setSelectionMode(true);
@@ -772,7 +784,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [hasSource, previewId, visibleGroups]);
+  }, [hasSource, visibleGroups]);
 
   useEffect(() => {
     return () => window.clearTimeout(refreshTimerRef.current);
@@ -1202,18 +1214,6 @@ export default function App() {
         />
       )}
 
-      {previewGroup && (
-        <PhotoPreview
-          canNavigate={visibleGroups.length > 1}
-          group={previewGroup}
-          onClose={closePreview}
-          onNext={() => movePreview(1)}
-          onOpenExternal={() => openGroup(previewGroup.id, true)}
-          onPrevious={() => movePreview(-1)}
-          t={t}
-        />
-      )}
-
       {aboutOpen && (
         <AccessibleModal
           className="about-modal"
@@ -1462,31 +1462,58 @@ function AccessibleModal({
   );
 }
 
-function PhotoPreview({
-  canNavigate,
-  group,
-  onClose,
-  onNext,
-  onOpenExternal,
-  onPrevious,
-  t,
-}: {
-  canNavigate: boolean;
-  group: PhotoGroup;
-  onClose: () => void;
-  onNext: () => void;
-  onOpenExternal: () => void;
-  onPrevious: () => void;
-  t: ReturnType<typeof makeTranslator>;
-}) {
+function PreviewWindow() {
+  const queryClient = useQueryClient();
+  const [language] = useState<LanguageCode>(() =>
+    normalizeLanguage(window.localStorage.getItem("ppm.language")),
+  );
+  const t = useMemo(() => makeTranslator(language), [language]);
+  const [previewState, setPreviewState] = useState<PreviewWindowState>(loadPreviewWindowState);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const currentId = previewState.id;
+  const currentIndex = currentId ? previewState.ids.indexOf(currentId) : -1;
+  const canNavigate = previewState.ids.length > 1 && currentIndex >= 0;
+  const detailQuery = useQuery({
+    enabled: Boolean(currentId),
+    queryFn: () => getPhotoGroup(currentId),
+    queryKey: ["photo-group-detail", currentId],
+  });
+  const group = detailQuery.data;
+  const jpgFile = group?.files.find((file) => file.kind === "jpg");
   const previewQuery = useQuery({
-    queryFn: () => getPhotoThumbnail(group.id, 1800),
-    queryKey: ["photo-thumbnail", group.id, 1800],
+    enabled: Boolean(currentId && !jpgFile),
+    queryFn: () => getPhotoThumbnail(currentId, 2400),
+    queryKey: ["photo-thumbnail", currentId, 2400],
     staleTime: Infinity,
   });
-  const previewPath = previewQuery.data;
+  const previewPath = jpgFile?.path ?? previewQuery.data;
+
+  const setCurrentId = useCallback((id: string) => {
+    setPreviewState((current) => {
+      const next = { ...current, id };
+      window.localStorage.setItem(PREVIEW_WINDOW_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const movePreview = useCallback(
+    (direction: -1 | 1) => {
+      if (!canNavigate) return;
+      const nextIndex = (currentIndex + direction + previewState.ids.length) % previewState.ids.length;
+      setCurrentId(previewState.ids[nextIndex]);
+    },
+    [canNavigate, currentIndex, previewState.ids, setCurrentId],
+  );
+
+  const closeWindow = useCallback(() => {
+    getCurrentWebviewWindow().close();
+  }, []);
+
+  const openExternal = useCallback(async () => {
+    if (!currentId) return;
+    await openPhotoGroup(currentId);
+  }, [currentId]);
 
   useEffect(() => {
     setLoaded(false);
@@ -1494,54 +1521,81 @@ function PhotoPreview({
 
   useEffect(() => {
     dialogRef.current?.focus();
-  }, [group.id]);
+  }, [currentId]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<PreviewWindowState>("preview-window-state", (event) => {
+      setPreviewState(event.payload);
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    if (group?.stem) {
+      getCurrentWebviewWindow().setTitle(`${group.stem} - Panasonic Pair Manager`);
+    }
+  }, [group?.stem]);
+
+  useEffect(() => {
+    if (!canNavigate) return;
+    const adjacent = [
+      previewState.ids[(currentIndex - 1 + previewState.ids.length) % previewState.ids.length],
+      previewState.ids[(currentIndex + 1) % previewState.ids.length],
+    ];
+    adjacent.forEach((id) => {
+      queryClient.prefetchQuery({
+        queryFn: () => getPhotoGroup(id),
+        queryKey: ["photo-group-detail", id],
+      });
+    });
+  }, [canNavigate, currentIndex, previewState.ids, queryClient]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      closeWindow();
       return;
     }
     if (event.key === "ArrowLeft" && canNavigate) {
       event.preventDefault();
-      onPrevious();
+      movePreview(-1);
       return;
     }
     if (event.key === "ArrowRight" && canNavigate) {
       event.preventDefault();
-      onNext();
+      movePreview(1);
     }
   };
 
   return (
     <div
-      className="preview-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      className="preview-window-root"
     >
       <div
         aria-label={t("preview.title")}
         aria-modal="true"
-        className="preview-dialog"
+        className="preview-dialog preview-window-dialog"
         onKeyDown={handleKeyDown}
         ref={dialogRef}
         role="dialog"
         tabIndex={-1}
       >
         <header className="preview-toolbar">
-          <div className="preview-title" title={group.stem}>
-            <strong>{group.stem}</strong>
+          <div className="preview-title" title={group?.stem ?? ""}>
+            <strong>{group?.stem ?? t("preview.title")}</strong>
             <span>
-              {group.folderName} · {formatBytes(group.totalSize)}
+              {group ? `${group.folderName} · ${formatBytes(group.totalSize)}` : t("preview.loading")}
             </span>
           </div>
           <div className="preview-actions">
-            <Button onClick={onOpenExternal}>
+            <Button disabled={!currentId} onClick={openExternal}>
               <ExternalLink size={15} />
               {t("preview.openExternal")}
             </Button>
-            <IconButton label={t("action.close")} onClick={onClose}>
+            <IconButton label={t("action.close")} onClick={closeWindow}>
               <X size={18} />
             </IconButton>
           </div>
@@ -1552,7 +1606,7 @@ function PhotoPreview({
             <button
               aria-label={t("preview.previous")}
               className="preview-nav previous"
-              onClick={onPrevious}
+              onClick={() => movePreview(-1)}
               type="button"
             >
               <ChevronLeft size={28} />
@@ -1565,9 +1619,10 @@ function PhotoPreview({
                 className={loaded ? "loaded" : ""}
                 src={convertFileSrc(previewPath)}
                 alt=""
+                decoding="async"
                 onLoad={() => setLoaded(true)}
               />
-            ) : previewQuery.isFetching ? (
+            ) : detailQuery.isFetching || previewQuery.isFetching ? (
               <div className="preview-loading">
                 <span />
                 {t("preview.loading")}
@@ -1585,7 +1640,7 @@ function PhotoPreview({
             <button
               aria-label={t("preview.next")}
               className="preview-nav next"
-              onClick={onNext}
+              onClick={() => movePreview(1)}
               type="button"
             >
               <ChevronRight size={28} />
