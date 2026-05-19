@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default app permissions",
   "windows": ["main", "photo-preview"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:webview:allow-create-webview-window"]
 }
