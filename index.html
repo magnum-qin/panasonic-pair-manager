@@ -4,6 +4,52 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Panasonic Pair Manager</title>
+    <script>
+      (function () {
+        try {
+          var theme = window.localStorage.getItem("ppm.theme") || "pureWhite";
+          document.documentElement.dataset.theme = theme;
+        } catch (_error) {
+          document.documentElement.dataset.theme = "pureWhite";
+        }
+      })();
+    </script>
+    <style>
+      :root {
+        background: #f6f3ee;
+      }
+
+      :root[data-theme="pureWhite"] {
+        background: #ffffff;
+      }
+
+      :root[data-theme="sakura"] {
+        background: #f7f1f4;
+      }
+
+      :root[data-theme="forest"] {
+        background: #f0f4ef;
+      }
+
+      :root[data-theme="graphite"] {
+        background: #20211f;
+        color-scheme: dark;
+      }
+
+      :root[data-theme="trueBlack"] {
+        background: #000000;
+        color-scheme: dark;
+      }
+
+      html,
+      body,
+      #root {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+        background: inherit;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

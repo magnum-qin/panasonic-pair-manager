@@ -1,4 +1,4 @@
-export type FileKind = "raw" | "jpg" | "sidecar" | "other";
+export type FileKind = "raw" | "jpg" | "video" | "sidecar" | "other";
 
 export interface PhotoFile {
   id: number;
@@ -25,6 +25,7 @@ export interface PhotoGroup {
   totalSize: number;
   rawCount: number;
   jpgCount: number;
+  videoCount: number;
   sidecarCount: number;
 }
 
@@ -53,11 +54,21 @@ export interface PhotoGroupFilter {
   rootPath?: string;
   query?: string;
   groupKind?: GroupKindFilter;
+  mediaKind?: MediaKindFilter;
+  sort?: PhotoSortMode;
   limit?: number;
   offset?: number;
 }
 
 export type GroupKindFilter = "all" | "paired" | "rawOnly" | "jpgOnly";
+export type MediaKindFilter = "photos" | "videos";
+export type PhotoSortMode =
+  | "captureAsc"
+  | "captureDesc"
+  | "nameAsc"
+  | "nameDesc"
+  | "sizeDesc"
+  | "sizeAsc";
 
 export interface ScanSummary {
   rootPath: string;
@@ -65,6 +76,7 @@ export interface ScanSummary {
   files: number;
   rawFiles: number;
   jpgFiles: number;
+  videoFiles: number;
   sidecarFiles: number;
   otherFiles: number;
   pairedGroups: number;
@@ -90,6 +102,7 @@ export interface DeleteSummary {
   files: number;
   rawFiles: number;
   jpgFiles: number;
+  videoFiles: number;
   totalSize: number;
   failed: string[];
 }

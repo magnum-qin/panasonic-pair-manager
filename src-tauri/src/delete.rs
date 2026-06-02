@@ -24,6 +24,9 @@ pub fn delete_groups(db: &Database, ids: &[String]) -> Result<DeleteSummary, Del
         if matches!(file.kind, FileKind::Jpg) {
             summary.jpg_files += 1;
         }
+        if matches!(file.kind, FileKind::Video) {
+            summary.video_files += 1;
+        }
 
         match trash::delete(Path::new(&file.path)) {
             Ok(()) => {

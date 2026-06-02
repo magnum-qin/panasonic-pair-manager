@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ImageOff } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { PhotoGroup } from "../types";
 import { formatBytes } from "../utils";
 import { PhotoCard } from "./PhotoCard";
@@ -31,10 +31,13 @@ export function PhotoGrid({
   activeId,
   emptyActionLabel,
   emptyDescription = "Select a folder and scan for `.RW2` / `.JPG` pairs.",
+  emptyIcon,
   emptyTitle = "No photo groups yet",
   galleryTitle,
   groups,
   hasMore,
+  headerControls,
+  isMediaTransitioning = false,
   isFetchingMore,
   loadingMoreLabel,
   minCardWidth,
@@ -53,10 +56,13 @@ export function PhotoGrid({
   activeId: string;
   emptyActionLabel?: string;
   emptyDescription?: string;
+  emptyIcon?: ReactNode;
   emptyTitle?: string;
   galleryTitle: string;
   groups: PhotoGroup[];
   hasMore: boolean;
+  headerControls?: ReactNode;
+  isMediaTransitioning?: boolean;
   isFetchingMore: boolean;
   loadingMoreLabel: string;
   minCardWidth: number;
@@ -72,12 +78,9 @@ export function PhotoGrid({
   selected: Set<string>;
   totalGroups: number;
 }) {
-  const [scrollRef, width] = useElementWidth<HTMLElement>();
+  const [scrollRef, width] = useElementWidth<HTMLDivElement>();
   const contentWidth = Math.max(width - GRID_PADDING * 2, minCardWidth);
-  const columns = Math.max(
-    1,
-    Math.floor((contentWidth + GRID_GAP) / (minCardWidth + GRID_GAP)),
-  );
+  const columns = Math.max(1, Math.floor((contentWidth + GRID_GAP) / (minCardWidth + GRID_GAP)));
   const cardWidth = minCardWidth;
   const rowHeight = Math.round(cardWidth * 0.75 + 72 + GRID_GAP);
   const thumbnailSize = Math.min(
@@ -87,10 +90,7 @@ export function PhotoGrid({
   const loadedRowCount = Math.ceil(groups.length / columns);
   const totalGroupCount = Math.max(groups.length, totalGroups);
   const rowCount = Math.ceil(totalGroupCount / columns);
-  const totalSize = useMemo(
-    () => groups.reduce((sum, group) => sum + group.totalSize, 0),
-    [groups],
-  );
+  const totalSize = headerControls ? 0 : groups.reduce((sum, group) => sum + group.totalSize, 0);
 
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -109,67 +109,78 @@ export function PhotoGrid({
   }, [hasMore, isFetchingMore, loadedRowCount, onLoadMore, virtualRows]);
 
   return (
-    <section className="gallery" ref={scrollRef}>
+    <section className="gallery">
       <div className="gallery-header">
-        <div>
-          <h2>{galleryTitle}</h2>
-          <span>{photoGroupsLabel}</span>
-        </div>
-        <span>{formatBytes(totalSize)}</span>
+        {headerControls ? (
+          <div className="gallery-controls-row">{headerControls}</div>
+        ) : (
+          <>
+            <div>
+              <h2>{galleryTitle}</h2>
+              <span>{photoGroupsLabel}</span>
+            </div>
+            <span>{formatBytes(totalSize)}</span>
+          </>
+        )}
       </div>
 
-      {!groups.length && !totalGroupCount ? (
-        <div className="grid">
-          <div className="gallery-empty action-empty">
-            <ImageOff size={38} />
-            <strong>{emptyTitle}</strong>
-            <span>{emptyDescription}</span>
-            {emptyActionLabel && onEmptyAction ? (
-              <button onClick={onEmptyAction}>{emptyActionLabel}</button>
-            ) : null}
+      <div
+        className={`gallery-scroll ${isMediaTransitioning ? "media-transitioning" : ""}`}
+        ref={scrollRef}
+      >
+        {!groups.length && !totalGroupCount ? (
+          <div className="grid">
+            <div className="gallery-empty action-empty">
+              {emptyIcon ?? <ImageOff size={38} />}
+              <strong>{emptyTitle}</strong>
+              <span>{emptyDescription}</span>
+              {emptyActionLabel && onEmptyAction ? (
+                <button onClick={onEmptyAction}>{emptyActionLabel}</button>
+              ) : null}
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="virtual-grid" style={{ height: virtualizer.getTotalSize() }}>
-          {virtualRows.map((virtualRow) => {
-            const start = virtualRow.index * columns;
-            const rowGroups = groups.slice(start, start + columns);
-            const isLoaderRow = start >= groups.length;
-            return (
-              <div
-                className={`virtual-row ${isLoaderRow ? "virtual-loader-row" : ""}`}
-                key={virtualRow.key}
-                style={{
-                  gridTemplateColumns: `repeat(${columns}, ${cardWidth}px)`,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                {isLoaderRow ? (
-                  <div className="inline-loader" aria-live="polite">
-                    <span />
-                    <strong>{isFetchingMore ? loadingMoreLabel : scrollToContinueLabel}</strong>
-                  </div>
-                ) : (
-                  rowGroups.map((group) => (
-                    <PhotoCard
-                      group={group}
-                      isActive={activeId === group.id}
-                      isSelected={selected.has(group.id)}
-                      key={group.id}
-                      noPreviewLabel={noPreviewLabel}
-                      thumbnailSize={thumbnailSize}
-                      onActivate={onActivate}
-                      onContextMenu={onContextMenu}
-                      onOpen={onOpen}
-                      onToggle={onToggle}
-                    />
-                  ))
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+        ) : (
+          <div className="virtual-grid" style={{ height: virtualizer.getTotalSize() }}>
+            {virtualRows.map((virtualRow) => {
+              const start = virtualRow.index * columns;
+              const rowGroups = groups.slice(start, start + columns);
+              const isLoaderRow = start >= groups.length;
+              return (
+                <div
+                  className={`virtual-row ${isLoaderRow ? "virtual-loader-row" : ""}`}
+                  key={virtualRow.key}
+                  style={{
+                    gridTemplateColumns: `repeat(${columns}, ${cardWidth}px)`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {isLoaderRow ? (
+                    <div className="inline-loader" aria-live="polite">
+                      <span />
+                      <strong>{isFetchingMore ? loadingMoreLabel : scrollToContinueLabel}</strong>
+                    </div>
+                  ) : (
+                    rowGroups.map((group) => (
+                      <PhotoCard
+                        group={group}
+                        isActive={activeId === group.id}
+                        isSelected={selected.has(group.id)}
+                        key={group.id}
+                        noPreviewLabel={noPreviewLabel}
+                        thumbnailSize={thumbnailSize}
+                        onActivate={onActivate}
+                        onContextMenu={onContextMenu}
+                        onOpen={onOpen}
+                        onToggle={onToggle}
+                      />
+                    ))
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

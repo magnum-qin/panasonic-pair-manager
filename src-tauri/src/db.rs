@@ -41,6 +41,7 @@ impl Database {
               total_size INTEGER NOT NULL,
               raw_count INTEGER NOT NULL,
               jpg_count INTEGER NOT NULL,
+              video_count INTEGER NOT NULL DEFAULT 0,
               sidecar_count INTEGER NOT NULL,
               updated_at TEXT NOT NULL
             );
@@ -70,6 +71,19 @@ impl Database {
             );
             ",
         )?;
+        let has_video_count = {
+            let mut stmt = conn.prepare("PRAGMA table_info(photo_groups)")?;
+            let columns = stmt
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            columns.iter().any(|column| column == "video_count")
+        };
+        if !has_video_count {
+            conn.execute(
+                "ALTER TABLE photo_groups ADD COLUMN video_count INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -102,8 +116,8 @@ impl Database {
             tx.execute(
                 "INSERT INTO photo_groups(
                     id, root_path, stem, folder_name, capture_time, camera_model, lens,
-                    preview_path, total_size, raw_count, jpg_count, sidecar_count, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    preview_path, total_size, raw_count, jpg_count, video_count, sidecar_count, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     group.id,
                     root,
@@ -116,6 +130,7 @@ impl Database {
                     group.total_size as i64,
                     group.raw_count,
                     group.jpg_count,
+                    group.video_count,
                     group.sidecar_count,
                     now
                 ],
@@ -156,33 +171,38 @@ impl Database {
             Some("paired") => " AND raw_count > 0 AND jpg_count > 0",
             Some("rawOnly") => " AND raw_count > 0 AND jpg_count = 0",
             Some("jpgOnly") => " AND raw_count = 0 AND jpg_count > 0",
+            _ if matches!(filter.media_kind.as_deref(), Some("videos")) => " AND video_count > 0",
             _ => " AND (raw_count > 0 OR jpg_count > 0)",
         };
+        let order_clause = photo_group_order_clause(filter.sort.as_deref());
 
         match (&filter.root_path, &query) {
             (Some(root), Some(query)) => query_groups(
                 &conn,
-                &format!("WHERE root_path = ?1 AND stem LIKE ?2{kind_clause} ORDER BY capture_time IS NULL, capture_time, stem LIMIT ?3 OFFSET ?4"),
+                &format!("WHERE root_path = ?1 AND stem LIKE ?2{kind_clause} {order_clause} LIMIT ?3 OFFSET ?4"),
                 params![root, query, limit, offset],
             ),
             (Some(root), None) => query_groups(
                 &conn,
-                &format!("WHERE root_path = ?1{kind_clause} ORDER BY capture_time IS NULL, capture_time, stem LIMIT ?2 OFFSET ?3"),
+                &format!("WHERE root_path = ?1{kind_clause} {order_clause} LIMIT ?2 OFFSET ?3"),
                 params![root, limit, offset],
             ),
             (None, Some(query)) => query_groups(
                 &conn,
-                &format!("WHERE stem LIKE ?1{kind_clause} ORDER BY capture_time IS NULL, capture_time, stem LIMIT ?2 OFFSET ?3"),
+                &format!("WHERE stem LIKE ?1{kind_clause} {order_clause} LIMIT ?2 OFFSET ?3"),
                 params![query, limit, offset],
             ),
             (None, None) => query_groups(
                 &conn,
                 &format!(
-                    "{} ORDER BY capture_time IS NULL, capture_time, stem LIMIT ?1 OFFSET ?2",
+                    "{} {order_clause} LIMIT ?1 OFFSET ?2",
                     match filter.group_kind.as_deref() {
                         Some("paired") => "WHERE raw_count > 0 AND jpg_count > 0",
                         Some("rawOnly") => "WHERE raw_count > 0 AND jpg_count = 0",
                         Some("jpgOnly") => "WHERE raw_count = 0 AND jpg_count > 0",
+                        _ if matches!(filter.media_kind.as_deref(), Some("videos")) => {
+                            "WHERE video_count > 0"
+                        }
                         _ => "WHERE raw_count > 0 OR jpg_count > 0",
                     }
                 ),
@@ -198,6 +218,7 @@ impl Database {
             Some("paired") => " AND raw_count > 0 AND jpg_count > 0",
             Some("rawOnly") => " AND raw_count > 0 AND jpg_count = 0",
             Some("jpgOnly") => " AND raw_count = 0 AND jpg_count > 0",
+            _ if matches!(filter.media_kind.as_deref(), Some("videos")) => " AND video_count > 0",
             _ => " AND (raw_count > 0 OR jpg_count > 0)",
         };
 
@@ -223,6 +244,9 @@ impl Database {
                     Some("paired") => "WHERE raw_count > 0 AND jpg_count > 0",
                     Some("rawOnly") => "WHERE raw_count > 0 AND jpg_count = 0",
                     Some("jpgOnly") => "WHERE raw_count = 0 AND jpg_count > 0",
+                    _ if matches!(filter.media_kind.as_deref(), Some("videos")) => {
+                        "WHERE video_count > 0"
+                    }
                     _ => "WHERE raw_count > 0 OR jpg_count > 0",
                 },
                 params![],
@@ -236,16 +260,17 @@ impl Database {
         conn.query_row(
             "
             SELECT
-              COUNT(*),
-              COALESCE(SUM(raw_count + jpg_count + sidecar_count), 0),
+              COALESCE(SUM(CASE WHEN raw_count > 0 OR jpg_count > 0 THEN 1 ELSE 0 END), 0),
+              COALESCE(SUM(raw_count + jpg_count + video_count + sidecar_count), 0),
               COALESCE(SUM(raw_count), 0),
               COALESCE(SUM(jpg_count), 0),
+              COALESCE(SUM(video_count), 0),
               COALESCE(SUM(sidecar_count), 0),
               COALESCE(SUM(CASE WHEN raw_count > 0 AND jpg_count > 0 THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN raw_count > 0 AND jpg_count = 0 THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN raw_count = 0 AND jpg_count > 0 THEN 1 ELSE 0 END), 0)
             FROM photo_groups
-            WHERE root_path = ?1 AND (raw_count > 0 OR jpg_count > 0)
+            WHERE root_path = ?1 AND (raw_count > 0 OR jpg_count > 0 OR video_count > 0)
             ",
             params![root_path],
             |row| {
@@ -255,11 +280,12 @@ impl Database {
                     files: row.get::<_, i64>(1)? as usize,
                     raw_files: row.get::<_, i64>(2)? as usize,
                     jpg_files: row.get::<_, i64>(3)? as usize,
-                    sidecar_files: row.get::<_, i64>(4)? as usize,
+                    video_files: row.get::<_, i64>(4)? as usize,
+                    sidecar_files: row.get::<_, i64>(5)? as usize,
                     other_files: 0,
-                    paired_groups: row.get::<_, i64>(5)? as usize,
-                    raw_only_groups: row.get::<_, i64>(6)? as usize,
-                    jpg_only_groups: row.get::<_, i64>(7)? as usize,
+                    paired_groups: row.get::<_, i64>(6)? as usize,
+                    raw_only_groups: row.get::<_, i64>(7)? as usize,
+                    jpg_only_groups: row.get::<_, i64>(8)? as usize,
                 })
             },
         )
@@ -280,7 +306,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, group_id, path, file_name, extension, kind, size, modified_secs, width, height
              FROM photo_files WHERE group_id = ?1
-             ORDER BY CASE kind WHEN 'raw' THEN 0 WHEN 'jpg' THEN 1 WHEN 'sidecar' THEN 2 ELSE 3 END, file_name",
+             ORDER BY CASE kind WHEN 'raw' THEN 0 WHEN 'jpg' THEN 1 WHEN 'video' THEN 2 WHEN 'sidecar' THEN 3 ELSE 4 END, file_name",
         )?;
         let files = stmt
             .query_map(params![id], map_file)?
@@ -345,7 +371,7 @@ fn query_groups<P: rusqlite::Params>(
 ) -> rusqlite::Result<Vec<PhotoGroup>> {
     let sql = format!(
         "SELECT id, root_path, stem, folder_name, capture_time, camera_model, lens,
-                preview_path, total_size, raw_count, jpg_count, sidecar_count
+                preview_path, total_size, raw_count, jpg_count, video_count, sidecar_count
          FROM photo_groups {}",
         suffix
     );
@@ -365,10 +391,23 @@ fn query_group_count<P: rusqlite::Params>(
     conn.query_row(&sql, params, |row| row.get(0))
 }
 
+fn photo_group_order_clause(sort: Option<&str>) -> &'static str {
+    match sort {
+        Some("captureDesc") => "ORDER BY capture_time IS NULL, capture_time DESC, stem DESC",
+        Some("nameAsc") => "ORDER BY stem COLLATE NOCASE ASC, capture_time IS NULL, capture_time",
+        Some("nameDesc") => {
+            "ORDER BY stem COLLATE NOCASE DESC, capture_time IS NULL, capture_time DESC"
+        }
+        Some("sizeDesc") => "ORDER BY total_size DESC, capture_time IS NULL, capture_time, stem",
+        Some("sizeAsc") => "ORDER BY total_size ASC, capture_time IS NULL, capture_time, stem",
+        _ => "ORDER BY capture_time IS NULL, capture_time, stem",
+    }
+}
+
 fn query_group_by_id(conn: &Connection, id: &str) -> rusqlite::Result<Option<PhotoGroup>> {
     conn.query_row(
         "SELECT id, root_path, stem, folder_name, capture_time, camera_model, lens,
-                preview_path, total_size, raw_count, jpg_count, sidecar_count
+                preview_path, total_size, raw_count, jpg_count, video_count, sidecar_count
          FROM photo_groups WHERE id = ?1",
         params![id],
         map_group,
@@ -389,7 +428,8 @@ fn map_group(row: &rusqlite::Row<'_>) -> rusqlite::Result<PhotoGroup> {
         total_size: row.get::<_, i64>(8)? as u64,
         raw_count: row.get(9)?,
         jpg_count: row.get(10)?,
-        sidecar_count: row.get(11)?,
+        video_count: row.get(11)?,
+        sidecar_count: row.get(12)?,
     })
 }
 
@@ -404,6 +444,7 @@ fn map_file(row: &rusqlite::Row<'_>) -> rusqlite::Result<PhotoFile> {
         kind: match kind.as_str() {
             "raw" => FileKind::Raw,
             "jpg" => FileKind::Jpg,
+            "video" => FileKind::Video,
             "sidecar" => FileKind::Sidecar,
             _ => FileKind::Other,
         },

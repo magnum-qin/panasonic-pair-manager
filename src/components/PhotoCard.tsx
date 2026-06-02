@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ImageOff } from "lucide-react";
+import { Check, ImageOff, Video } from "lucide-react";
 import { memo, useEffect, useState, type MouseEvent } from "react";
 import { getPhotoThumbnail } from "../api";
 import type { PhotoGroup } from "../types";
@@ -30,8 +30,10 @@ export const PhotoCard = memo(function PhotoCard({
   onToggle: (id: string) => void;
 }) {
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
+  const isVideo = group.videoCount > 0 && group.rawCount === 0 && group.jpgCount === 0;
   const thumbnailQuery = useQuery({
-    enabled: group.jpgCount > 0 || group.rawCount > 0,
+    enabled: !isVideo && (group.jpgCount > 0 || group.rawCount > 0),
     queryFn: () => getPhotoThumbnail(group.id, thumbnailSize),
     queryKey: ["photo-thumbnail", group.id, thumbnailSize],
     staleTime: Number.POSITIVE_INFINITY,
@@ -48,7 +50,7 @@ export const PhotoCard = memo(function PhotoCard({
 
   return (
     <article
-      className={`photo-card ${isSelected ? "selected" : ""} ${isActive ? "active" : ""}`}
+      className={`photo-card ${isSelected ? "selected" : ""} ${isActive ? "active" : ""} ${isPressed ? "pressed" : ""}`}
     >
       <button
         className="check"
@@ -81,8 +83,14 @@ export const PhotoCard = memo(function PhotoCard({
           event.stopPropagation();
           onOpen(group.id);
         }}
+        onPointerCancel={() => setIsPressed(false)}
+        onPointerDown={() => setIsPressed(true)}
+        onPointerLeave={() => setIsPressed(false)}
+        onPointerUp={() => setIsPressed(false)}
       >
-        <div className={`thumb ${(group.previewPath || group.rawCount > 0) && !imageLoaded ? "loading" : ""}`}>
+        <div
+          className={`thumb ${(group.previewPath || group.rawCount > 0) && !imageLoaded ? "loading" : ""}`}
+        >
           {thumbnailPath ? (
             <img
               className={imageLoaded ? "loaded" : ""}
@@ -98,6 +106,11 @@ export const PhotoCard = memo(function PhotoCard({
             />
           ) : (group.previewPath || group.rawCount > 0) && thumbnailQuery.isFetching ? (
             <div className="thumb-pending" aria-label="Loading thumbnail" />
+          ) : isVideo ? (
+            <div className="no-preview video-preview">
+              <Video size={34} />
+              <span>{noPreviewLabel}</span>
+            </div>
           ) : (
             <div className="no-preview">
               <ImageOff size={30} />
@@ -107,6 +120,7 @@ export const PhotoCard = memo(function PhotoCard({
           <div className="badges">
             {group.rawCount > 0 && <span>RAW</span>}
             {group.jpgCount > 0 && <span>JPG</span>}
+            {group.videoCount > 0 && <span>VIDEO</span>}
           </div>
         </div>
         <div className="card-meta">

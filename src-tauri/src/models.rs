@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum FileKind {
     Raw,
     Jpg,
+    Video,
     Sidecar,
     Other,
 }
@@ -14,6 +15,7 @@ impl FileKind {
         match extension.to_ascii_lowercase().as_str() {
             "rw2" | "raw" | "dng" | "raf" | "arw" | "cr2" | "cr3" | "nef" | "orf" => Self::Raw,
             "jpg" | "jpeg" => Self::Jpg,
+            "mp4" | "mov" | "m4v" | "avi" | "mkv" | "mts" | "m2ts" => Self::Video,
             "xmp" => Self::Sidecar,
             _ => Self::Other,
         }
@@ -23,6 +25,7 @@ impl FileKind {
         match self {
             Self::Raw => "raw",
             Self::Jpg => "jpg",
+            Self::Video => "video",
             Self::Sidecar => "sidecar",
             Self::Other => "other",
         }
@@ -58,6 +61,7 @@ pub struct PhotoGroup {
     pub total_size: u64,
     pub raw_count: i64,
     pub jpg_count: i64,
+    pub video_count: i64,
     pub sidecar_count: i64,
 }
 
@@ -96,6 +100,8 @@ pub struct PhotoGroupFilter {
     pub root_path: Option<String>,
     pub query: Option<String>,
     pub group_kind: Option<String>,
+    pub media_kind: Option<String>,
+    pub sort: Option<String>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
@@ -108,6 +114,7 @@ pub struct ScanSummary {
     pub files: usize,
     pub raw_files: usize,
     pub jpg_files: usize,
+    pub video_files: usize,
     pub sidecar_files: usize,
     pub other_files: usize,
     pub paired_groups: usize,
@@ -139,6 +146,7 @@ pub struct DeleteSummary {
     pub files: usize,
     pub raw_files: usize,
     pub jpg_files: usize,
+    pub video_files: usize,
     pub total_size: u64,
     pub failed: Vec<String>,
 }
