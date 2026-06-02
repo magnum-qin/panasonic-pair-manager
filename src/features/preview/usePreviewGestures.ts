@@ -1,36 +1,14 @@
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import {
   MAX_PREVIEW_SCALE,
   MIN_PREVIEW_SCALE,
-  PREVIEW_PINCH_ZOOM_SENSITIVITY,
   PREVIEW_WHEEL_ZOOM_SENSITIVITY,
   type PreviewTransform,
 } from "./preview-types";
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function pointerDistance(points: { x: number; y: number }[]) {
-  if (points.length < 2) return 0;
-  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-}
-
-function pointerCenter(points: { x: number; y: number }[]) {
-  if (!points.length) return { x: 0, y: 0 };
-  const total = points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), {
-    x: 0,
-    y: 0,
-  });
-  return {
-    x: total.x / points.length,
-    y: total.y / points.length,
-  };
-}
+import { clamp, pointerCenter, pointerDistance, type PreviewPoint } from "./preview-gesture-utils";
+import { usePreviewWheelZoom } from "./usePreviewWheelZoom";
 
 export function usePreviewGestures(previewPath: string | null | undefined) {
-  const currentWebview = useMemo(() => getCurrentWebview(), []);
   const imageFrameRef = useRef<HTMLDivElement | null>(null);
   const [previewTransform, setPreviewTransform] = useState<PreviewTransform>({
     scale: MIN_PREVIEW_SCALE,
@@ -38,7 +16,7 @@ export function usePreviewGestures(previewPath: string | null | undefined) {
     y: 0,
   });
   const previewTransformRef = useRef(previewTransform);
-  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pointersRef = useRef(new Map<number, PreviewPoint>());
   const panGestureRef = useRef<{
     pointerId: number;
     startX: number;
@@ -88,47 +66,7 @@ export function usePreviewGestures(previewPath: string | null | undefined) {
     pinchGestureRef.current = null;
   }, [previewPath]);
 
-  useEffect(() => {
-    const frame = imageFrameRef.current;
-    if (!frame) return;
-
-    const handleNativeWheel = (event: WheelEvent) => {
-      if (!previewPath) return;
-      if (!(event.target instanceof Node) || !frame.contains(event.target)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      zoomPreview(
-        event.deltaY,
-        event.ctrlKey ? PREVIEW_PINCH_ZOOM_SENSITIVITY : PREVIEW_WHEEL_ZOOM_SENSITIVITY,
-      );
-      if (event.ctrlKey) void currentWebview.setZoom(1);
-    };
-
-    window.addEventListener("wheel", handleNativeWheel, { capture: true, passive: false });
-    return () => window.removeEventListener("wheel", handleNativeWheel, { capture: true });
-  }, [currentWebview, previewPath, zoomPreview]);
-
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-
-    let previousScale = viewport.scale || 1;
-    const handleViewportZoom = () => {
-      const nextScale = viewport.scale || 1;
-      if (!previewPath || Math.abs(nextScale - previousScale) < 0.01) {
-        previousScale = nextScale;
-        return;
-      }
-
-      const syntheticDelta = nextScale > previousScale ? -42 : 42;
-      zoomPreview(syntheticDelta);
-      previousScale = nextScale;
-      void currentWebview.setZoom(1);
-    };
-
-    viewport.addEventListener("resize", handleViewportZoom);
-    return () => viewport.removeEventListener("resize", handleViewportZoom);
-  }, [currentWebview, previewPath, zoomPreview]);
+  usePreviewWheelZoom({ imageFrameRef, previewPath, zoomPreview });
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!previewPath) return;
