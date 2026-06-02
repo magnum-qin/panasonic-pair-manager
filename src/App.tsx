@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, useQueries } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Info, Settings, Video } from "lucide-react";
 import {
@@ -14,7 +14,6 @@ import {
 import {
   clearThumbnailCache,
   deletePhotoGroups,
-  getPhotoGroup,
   listRemovableRoots,
   openPhotoFile,
   openPhotoGroup,
@@ -29,8 +28,6 @@ import {
   MEDIA_SWITCH_FADE_MS,
   MEDIA_SWITCH_SETTLE_MS,
   MANUAL_ROOTS_STORAGE_KEY,
-  PHOTO_SORT_OPTIONS,
-  type CardSizePreset,
 } from "./features/app/app-config";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
 import {
@@ -38,8 +35,6 @@ import {
   dirName,
   isPreviewWindowRoute,
   loadStoredManualRoots,
-  makeTranslator,
-  nearestCardSizePreset,
 } from "./features/app/app-utils";
 import { MainToolbar } from "./features/app/MainToolbar";
 import { GalleryControls } from "./features/gallery/GalleryControls";
@@ -50,14 +45,13 @@ import { useSelectionMode } from "./hooks/useSelectionMode";
 import { usePreviewWindow } from "./hooks/usePreviewWindow";
 import { useMediaLibrary } from "./hooks/useMediaLibrary";
 import { useSourceSelection } from "./hooks/useSourceSelection";
-import { normalizeLanguage, translate, type LanguageCode } from "./i18n";
-import { normalizeTheme, type ThemeCode } from "./theme-options";
+import { useAppPreferences } from "./hooks/useAppPreferences";
+import { useDeleteWorkflow } from "./hooks/useDeleteWorkflow";
 import type {
   DriveCandidate,
   GroupKindFilter,
   MediaKindFilter,
   PhotoGroup,
-  PhotoSortMode,
   ScanProgress,
   ScanSummary,
 } from "./types";
@@ -81,14 +75,19 @@ export default function App() {
   const [groupKind, setGroupKind] = useState<GroupKindFilter>("all");
   const [mediaKind, setMediaKind] = useState<MediaKindFilter>("photos");
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
-  const [language, setLanguage] = useState<LanguageCode>(() =>
-    normalizeLanguage(window.localStorage.getItem("ppm.language")),
-  );
-  const [theme, setTheme] = useState<ThemeCode>(() =>
-    normalizeTheme(window.localStorage.getItem("ppm.theme")),
-  );
-  const t = useMemo(() => makeTranslator(language), [language]);
-  const [message, setMessage] = useState(() => translate(language, "status.ready"));
+  const {
+    cardSize,
+    language,
+    message,
+    photoSort,
+    setLanguage,
+    setMessage,
+    setPhotoSort,
+    setTheme,
+    t,
+    theme,
+    updateCardSize,
+  } = useAppPreferences();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -97,12 +96,6 @@ export default function App() {
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [galleryLayoutTransitioning, setGalleryLayoutTransitioning] = useState(false);
   const [mediaTransitioning, setMediaTransitioning] = useState(false);
-  const [photoSort, setPhotoSort] = useState<PhotoSortMode>(() => {
-    const stored = window.localStorage.getItem("ppm.photoSort");
-    return PHOTO_SORT_OPTIONS.some((option) => option.value === stored)
-      ? (stored as PhotoSortMode)
-      : "captureAsc";
-  });
   const [contextMenu, setContextMenu] = useState<{
     group: PhotoGroup;
     x: number;
@@ -110,10 +103,6 @@ export default function App() {
   } | null>(null);
   const [manualRoots, setManualRoots] = useState<string[]>(loadStoredManualRoots);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [cardSize, setCardSize] = useState(() => {
-    const stored = Number(window.localStorage.getItem("ppm.cardSize"));
-    return Number.isFinite(stored) ? nearestCardSizePreset(stored) : 230;
-  });
   const deferredQuery = useDeferredValue(query);
   const activeByRootRef = useRef<Record<string, string>>({});
   const knownDrivePathsRef = useRef<Set<string>>(new Set());
@@ -178,22 +167,8 @@ export default function App() {
   useEffect(() => () => clearMediaTransitionTimers(), [clearMediaTransitionTimers]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem("ppm.theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    document.documentElement.lang = language;
-    window.localStorage.setItem("ppm.language", language);
-  }, [language]);
-
-  useEffect(() => {
     window.localStorage.setItem(MANUAL_ROOTS_STORAGE_KEY, JSON.stringify(manualRoots));
   }, [manualRoots]);
-
-  useEffect(() => {
-    window.localStorage.setItem("ppm.photoSort", photoSort);
-  }, [photoSort]);
 
   const closeModal = useCallback(
     (modal: "about" | "settings" | "delete", setOpen: (open: boolean) => void) => {
@@ -468,42 +443,11 @@ export default function App() {
     t,
   ]);
   const modalOpen = aboutOpen || settingsOpen || deleteOpen;
-  const deleteDetailQueries = useQueries({
-    queries: selectedIds.map((id) => ({
-      enabled: deleteOpen,
-      queryFn: () => getPhotoGroup(id),
-      queryKey: ["photo-group-detail", id],
-    })),
+  const { deleteDetailLoading, deleteFiles, deletePlan } = useDeleteWorkflow({
+    deleteOpen,
+    selectedGroups,
+    selectedIds,
   });
-  const deleteDetailLoading = deleteOpen && deleteDetailQueries.some((query) => query.isFetching);
-  const deleteFiles = useMemo(
-    () => deleteDetailQueries.flatMap((query) => query.data?.files ?? []),
-    [deleteDetailQueries],
-  );
-
-  const deletePlan = useMemo(() => {
-    return selectedGroups.reduce(
-      (acc, group) => {
-        acc.groups += 1;
-        acc.rawFiles += group.rawCount;
-        acc.jpgFiles += group.jpgCount;
-        acc.videoFiles += group.videoCount;
-        acc.sidecarFiles += group.sidecarCount;
-        acc.files += group.rawCount + group.jpgCount + group.videoCount + group.sidecarCount;
-        acc.totalSize += group.totalSize;
-        return acc;
-      },
-      {
-        groups: 0,
-        files: 0,
-        rawFiles: 0,
-        jpgFiles: 0,
-        videoFiles: 0,
-        sidecarFiles: 0,
-        totalSize: 0,
-      },
-    );
-  }, [selectedGroups]);
 
   useEffect(() => {
     if (initialManualRootSelectedRef.current || rootPath || !manualRoots.length) return;
@@ -670,12 +614,6 @@ export default function App() {
     },
     [t],
   );
-
-  const updateCardSize = useCallback((value: CardSizePreset) => {
-    const nextSize = nearestCardSizePreset(value);
-    setCardSize(nextSize);
-    window.localStorage.setItem("ppm.cardSize", String(nextSize));
-  }, []);
 
   const loadMoreGroups = useCallback(() => {
     if (groupsQuery.hasNextPage && !groupsQuery.isFetchingNextPage) {
