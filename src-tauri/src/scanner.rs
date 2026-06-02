@@ -198,6 +198,11 @@ fn build_group(
     let preview_path = files
         .iter()
         .find(|file| matches!(file.kind, FileKind::Jpg))
+        .or_else(|| {
+            files
+                .iter()
+                .find(|file| matches!(file.kind, FileKind::Video))
+        })
         .map(|file| file.path.clone());
 
     ScannedGroup {
@@ -341,5 +346,21 @@ mod tests {
         assert_eq!(groups[0].stem, "P1000002");
         assert_eq!(groups[0].raw_count, 1);
         assert_eq!(groups[0].sidecar_count, 1);
+    }
+
+    #[test]
+    fn uses_video_file_as_preview_for_video_only_group() {
+        let dir = tempdir().unwrap();
+        let video_path = dir.path().join("P1000001.MP4");
+        fs::write(&video_path, b"video").unwrap();
+
+        let groups = build_groups(dir.path());
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].video_count, 1);
+        assert_eq!(
+            groups[0].preview_path.as_deref(),
+            Some(video_path.to_string_lossy().as_ref())
+        );
     }
 }

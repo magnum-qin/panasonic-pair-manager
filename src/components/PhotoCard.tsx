@@ -30,8 +30,10 @@ export const PhotoCard = memo(function PhotoCard({
   onToggle: (id: string) => void;
 }) {
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [videoLoaded, setVideoLoaded] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const isVideo = group.videoCount > 0 && group.rawCount === 0 && group.jpgCount === 0;
+  const videoPreviewPath = isVideo ? group.previewPath : undefined;
   const thumbnailQuery = useQuery({
     enabled: !isVideo && (group.jpgCount > 0 || group.rawCount > 0),
     queryFn: () => getPhotoThumbnail(group.id, thumbnailSize),
@@ -43,6 +45,10 @@ export const PhotoCard = memo(function PhotoCard({
   useEffect(() => {
     setImageLoaded(Boolean(thumbnailPath && loadedThumbnailPaths.has(thumbnailPath)));
   }, [thumbnailPath]);
+
+  useEffect(() => {
+    setVideoLoaded(false);
+  }, [videoPreviewPath]);
 
   const handlePrimaryAction = (range?: boolean) => {
     onActivate(group.id, range);
@@ -89,7 +95,12 @@ export const PhotoCard = memo(function PhotoCard({
         onPointerUp={() => setIsPressed(false)}
       >
         <div
-          className={`thumb ${(group.previewPath || group.rawCount > 0) && !imageLoaded ? "loading" : ""}`}
+          className={`thumb ${
+            ((thumbnailPath || group.rawCount > 0) && !imageLoaded) ||
+            (videoPreviewPath && !videoLoaded)
+              ? "loading"
+              : ""
+          }`}
         >
           {thumbnailPath ? (
             <img
@@ -106,6 +117,15 @@ export const PhotoCard = memo(function PhotoCard({
             />
           ) : (group.previewPath || group.rawCount > 0) && thumbnailQuery.isFetching ? (
             <div className="thumb-pending" aria-label="Loading thumbnail" />
+          ) : videoPreviewPath ? (
+            <video
+              className={videoLoaded ? "loaded" : ""}
+              src={convertFileSrc(videoPreviewPath)}
+              muted
+              playsInline
+              preload="metadata"
+              onLoadedData={() => setVideoLoaded(true)}
+            />
           ) : isVideo ? (
             <div className="no-preview video-preview">
               <Video size={34} />
