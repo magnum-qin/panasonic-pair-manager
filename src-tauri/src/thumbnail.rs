@@ -92,6 +92,58 @@ pub(crate) async fn get_photo_thumbnail(
 }
 
 #[tauri::command]
+pub(crate) async fn get_video_thumbnail(
+    state: State<'_, AppState>,
+    id: String,
+    max_size: u32,
+) -> Result<Option<String>, String> {
+    let db = state.db.clone();
+    let thumbnail_dir = state.thumbnail_dir.clone();
+    let thumbnail_lock = state.thumbnail_lock.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let detail = db.get_photo_group(&id).map_err(|error| error.to_string())?;
+        let Some(file) = detail
+            .files
+            .iter()
+            .find(|file| matches!(file.kind, FileKind::Video))
+        else {
+            return Ok(None);
+        };
+
+        let source = PathBuf::from(&file.path);
+        if !source.exists() {
+            return Ok(None);
+        }
+
+        std::fs::create_dir_all(&thumbnail_dir).map_err(|error| error.to_string())?;
+        let size = max_size.clamp(160, 2400);
+        let cache_path = thumbnail_dir.join(format!(
+            "video-{}-{}-{}.jpg",
+            stable_hash(&file.path),
+            file.modified_secs.unwrap_or_default(),
+            size
+        ));
+        if cache_path.exists() {
+            return Ok(Some(cache_path.to_string_lossy().to_string()));
+        }
+
+        let _guard = thumbnail_lock
+            .lock()
+            .map_err(|_| "thumbnail worker lock is poisoned".to_string())?;
+        if cache_path.exists() {
+            return Ok(Some(cache_path.to_string_lossy().to_string()));
+        }
+        if write_ffmpeg_video_thumbnail(&source, &cache_path, size).is_ok() {
+            return Ok(Some(cache_path.to_string_lossy().to_string()));
+        }
+
+        Ok(None)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub(crate) async fn get_thumbnail_cache_stats(
     state: State<'_, AppState>,
 ) -> Result<ThumbnailCacheStats, String> {
@@ -141,6 +193,38 @@ fn write_exiftool_preview(source: &PathBuf, cache_path: &PathBuf) -> Result<(), 
         return Ok(());
     }
     Err("ExifTool did not return a JPEG preview.".to_string())
+}
+
+fn write_ffmpeg_video_thumbnail(
+    source: &PathBuf,
+    cache_path: &PathBuf,
+    size: u32,
+) -> Result<(), String> {
+    let output = Command::new("ffmpeg")
+        .arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-y")
+        .arg("-ss")
+        .arg("00:00:01")
+        .arg("-i")
+        .arg(source)
+        .arg("-frames:v")
+        .arg("1")
+        .arg("-vf")
+        .arg(format!("scale=min({size}\\,iw):-2"))
+        .arg("-q:v")
+        .arg("4")
+        .arg(cache_path)
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    if output.status.success() && cache_path.exists() {
+        return Ok(());
+    }
+
+    let _ = std::fs::remove_file(cache_path);
+    Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
 }
 
 fn write_embedded_thumbnail(source: &PathBuf, cache_path: &PathBuf) -> Result<(), String> {

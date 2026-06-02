@@ -42,6 +42,10 @@ export function getPhotoThumbnail(id: string, maxSize: number) {
   return invoke<string | null>("get_photo_thumbnail", { id, maxSize });
 }
 
+export function getVideoThumbnail(id: string, maxSize: number) {
+  return invoke<string | null>("get_video_thumbnail", { id, maxSize });
+}
+
 export function getThumbnailCacheStats() {
   return invoke<ThumbnailCacheStats>("get_thumbnail_cache_stats");
 }

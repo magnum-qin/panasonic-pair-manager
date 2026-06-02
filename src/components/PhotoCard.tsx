@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ImageOff, Video } from "lucide-react";
 import { memo, useEffect, useState, type MouseEvent } from "react";
-import { getPhotoThumbnail } from "../api";
+import { getPhotoThumbnail, getVideoThumbnail } from "../api";
 import type { PhotoGroup } from "../types";
 import { formatBytes } from "../utils";
 
@@ -40,7 +40,13 @@ export const PhotoCard = memo(function PhotoCard({
     queryKey: ["photo-thumbnail", group.id, thumbnailSize],
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const thumbnailPath = thumbnailQuery.data;
+  const videoThumbnailQuery = useQuery({
+    enabled: isVideo,
+    queryFn: () => getVideoThumbnail(group.id, thumbnailSize),
+    queryKey: ["video-thumbnail", group.id, thumbnailSize],
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const thumbnailPath = thumbnailQuery.data ?? videoThumbnailQuery.data;
 
   useEffect(() => {
     setImageLoaded(Boolean(thumbnailPath && loadedThumbnailPaths.has(thumbnailPath)));
@@ -97,7 +103,7 @@ export const PhotoCard = memo(function PhotoCard({
         <div
           className={`thumb ${
             ((thumbnailPath || group.rawCount > 0) && !imageLoaded) ||
-            (videoPreviewPath && !videoLoaded)
+            (videoPreviewPath && !thumbnailPath && !videoLoaded)
               ? "loading"
               : ""
           }`}
@@ -115,7 +121,8 @@ export const PhotoCard = memo(function PhotoCard({
                 setImageLoaded(true);
               }}
             />
-          ) : (group.previewPath || group.rawCount > 0) && thumbnailQuery.isFetching ? (
+          ) : ((group.previewPath || group.rawCount > 0) && thumbnailQuery.isFetching) ||
+            videoThumbnailQuery.isFetching ? (
             <div className="thumb-pending" aria-label="Loading thumbnail" />
           ) : videoPreviewPath ? (
             <video

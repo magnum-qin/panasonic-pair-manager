@@ -49,6 +49,7 @@ pub fn run() {
             commands::has_scan_for_root,
             commands::get_photo_group,
             thumbnail::get_photo_thumbnail,
+            thumbnail::get_video_thumbnail,
             thumbnail::get_thumbnail_cache_stats,
             thumbnail::clear_thumbnail_cache,
             commands::get_photo_group_metadata,
