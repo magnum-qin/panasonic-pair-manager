@@ -1,6 +1,8 @@
 node_modules/
 dist/
 output/
+playwright-report/
+test-results/
 src-tauri/target/
 *.log
 .research/
