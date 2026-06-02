@@ -2,6 +2,7 @@ use crate::db::Database;
 use crate::models::{FileKind, ScanProgress, ScanSummary};
 use sha1::{Digest, Sha1};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
@@ -30,6 +31,7 @@ pub struct ScannedGroup {
     pub total_size: u64,
     pub raw_count: i64,
     pub jpg_count: i64,
+    pub video_count: i64,
     pub sidecar_count: i64,
     pub files: Vec<ScannedFile>,
 }
@@ -102,7 +104,7 @@ where
             .unwrap_or_default()
             .to_ascii_lowercase();
         let kind = FileKind::from_extension(&extension);
-        if scanned_files == 1 || scanned_files % 250 == 0 {
+        if scanned_files == 1 || scanned_files.is_multiple_of(250) {
             on_progress(ScanProgress {
                 root_path: root.clone(),
                 scanned_files,
@@ -159,7 +161,7 @@ where
     grouped
         .into_iter()
         .map(|((folder, stem), files)| build_group(root_path, folder, stem, files))
-        .filter(|group| group.raw_count > 0 || group.jpg_count > 0)
+        .filter(|group| group.raw_count > 0 || group.jpg_count > 0 || group.video_count > 0)
         .collect()
 }
 
@@ -172,7 +174,8 @@ fn build_group(
     files.sort_by_key(|file| match file.kind {
         FileKind::Raw => 0,
         FileKind::Jpg => 1,
-        FileKind::Sidecar => 2,
+        FileKind::Video => 2,
+        FileKind::Sidecar => 3,
         FileKind::Other => 3,
     });
 
@@ -187,6 +190,10 @@ fn build_group(
     let sidecar_count = files
         .iter()
         .filter(|file| matches!(file.kind, FileKind::Sidecar))
+        .count() as i64;
+    let video_count = files
+        .iter()
+        .filter(|file| matches!(file.kind, FileKind::Video))
         .count() as i64;
     let preview_path = files
         .iter()
@@ -208,6 +215,7 @@ fn build_group(
         total_size: files.iter().map(|file| file.size).sum(),
         raw_count,
         jpg_count,
+        video_count,
         sidecar_count,
         files,
     }
@@ -224,6 +232,7 @@ fn summarize(root_path: &Path, groups: &[ScannedGroup]) -> ScanSummary {
         summary.files += group.files.len();
         summary.raw_files += group.raw_count as usize;
         summary.jpg_files += group.jpg_count as usize;
+        summary.video_files += group.video_count as usize;
         summary.sidecar_files += group.sidecar_count as usize;
         if group.raw_count > 0 && group.jpg_count > 0 {
             summary.paired_groups += 1;
@@ -243,7 +252,15 @@ fn group_id(root_path: &Path, folder: &Path, stem: &str) -> String {
     hasher.update(folder.to_string_lossy().as_bytes());
     hasher.update(b"|");
     hasher.update(stem.as_bytes());
-    format!("{:x}", hasher.finalize())
+    sha1_hex(hasher)
+}
+
+fn sha1_hex(hasher: Sha1) -> String {
+    let mut output = String::with_capacity(40);
+    for byte in hasher.finalize() {
+        write!(&mut output, "{byte:02x}").expect("writing to string cannot fail");
+    }
+    output
 }
 
 #[cfg(test)]
