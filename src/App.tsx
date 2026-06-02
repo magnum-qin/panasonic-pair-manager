@@ -1,12 +1,5 @@
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-  useQueries,
-} from "@tanstack/react-query";
-import { emitTo, listen } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { useMutation, useQuery, useQueryClient, useQueries } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Info, Settings, Video } from "lucide-react";
 import {
   useCallback,
@@ -19,15 +12,9 @@ import {
   Suspense,
 } from "react";
 import {
-  countPhotoGroups,
   clearThumbnailCache,
   deletePhotoGroups,
   getPhotoGroup,
-  getPhotoGroupMetadata,
-  getScanSummary,
-  getThumbnailCacheStats,
-  hasScanForRoot,
-  listPhotoGroups,
   listRemovableRoots,
   openPhotoFile,
   openPhotoGroup,
@@ -43,16 +30,12 @@ import {
   MEDIA_SWITCH_SETTLE_MS,
   MANUAL_ROOTS_STORAGE_KEY,
   PHOTO_SORT_OPTIONS,
-  PREVIEW_WINDOW_BACKGROUNDS,
-  PREVIEW_WINDOW_LABEL,
-  PREVIEW_WINDOW_STORAGE_KEY,
   type CardSizePreset,
 } from "./features/app/app-config";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
 import {
   activeMemoryKey,
   dirName,
-  getGroupsFilter,
   isPreviewWindowRoute,
   loadStoredManualRoots,
   makeTranslator,
@@ -63,6 +46,10 @@ import { GalleryControls } from "./features/gallery/GalleryControls";
 import { PhotoContextMenu } from "./features/gallery/PhotoContextMenu";
 import { InspectorPanel } from "./features/inspector/InspectorPanel";
 import { SourcePanel } from "./features/sources/SourcePanel";
+import { useSelectionMode } from "./hooks/useSelectionMode";
+import { usePreviewWindow } from "./hooks/usePreviewWindow";
+import { useMediaLibrary } from "./hooks/useMediaLibrary";
+import { useSourceSelection } from "./hooks/useSourceSelection";
 import { normalizeLanguage, translate, type LanguageCode } from "./i18n";
 import { normalizeTheme, type ThemeCode } from "./theme-options";
 import type {
@@ -74,7 +61,7 @@ import type {
   ScanProgress,
   ScanSummary,
 } from "./types";
-import { fileName, PAGE_SIZE } from "./utils";
+import { fileName } from "./utils";
 
 const PreviewWindow = lazy(() => import("./PreviewWindow"));
 
@@ -90,7 +77,6 @@ export default function App() {
   const queryClient = useQueryClient();
   const [rootPath, setRootPath] = useState("");
   const [activeId, setActiveId] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [groupKind, setGroupKind] = useState<GroupKindFilter>("all");
   const [mediaKind, setMediaKind] = useState<MediaKindFilter>("photos");
@@ -107,7 +93,6 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [closingModal, setClosingModal] = useState<"about" | "settings" | "delete" | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<"info" | "metadata">("info");
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [galleryLayoutTransitioning, setGalleryLayoutTransitioning] = useState(false);
@@ -130,9 +115,7 @@ export default function App() {
     return Number.isFinite(stored) ? nearestCardSizePreset(stored) : 230;
   });
   const deferredQuery = useDeferredValue(query);
-  const selectionModeRef = useRef(selectionMode);
   const activeByRootRef = useRef<Record<string, string>>({});
-  const selectionAnchorRef = useRef<string>("");
   const knownDrivePathsRef = useRef<Set<string>>(new Set());
   const seenRemovablePathsRef = useRef<Set<string>>(new Set());
   const initialManualRootSelectedRef = useRef(false);
@@ -147,7 +130,6 @@ export default function App() {
   const clearActiveSource = useCallback((nextMessage?: string) => {
     setRootPath("");
     setActiveId("");
-    setSelected(new Set());
     setScanSummary(null);
     if (nextMessage) setMessage(nextMessage);
   }, []);
@@ -236,53 +218,6 @@ export default function App() {
     closeModal("delete", setDeleteOpen);
   }, [closeModal]);
 
-  const rootAvailableQuery = useQuery({
-    enabled: Boolean(rootPath),
-    queryFn: () => pathExists(rootPath),
-    queryKey: ["path-exists", rootPath],
-    refetchInterval: 5_000,
-  });
-
-  const groupsQuery = useInfiniteQuery({
-    queryKey: ["photo-groups", rootPath, deferredQuery, groupKind, photoSort, mediaKind],
-    queryFn: ({ pageParam }) =>
-      listPhotoGroups(
-        getGroupsFilter(rootPath, deferredQuery, groupKind, photoSort, mediaKind, pageParam),
-      ),
-    enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, pages) => {
-      if (lastPage.length <= PAGE_SIZE) return undefined;
-      return pages.reduce((sum, page) => sum + Math.min(page.length, PAGE_SIZE), 0);
-    },
-  });
-
-  const summaryQuery = useQuery({
-    enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
-    queryFn: () => getScanSummary(rootPath),
-    queryKey: ["scan-summary", rootPath],
-  });
-
-  const groupCountQuery = useQuery({
-    enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
-    queryFn: () =>
-      countPhotoGroups(
-        getGroupsFilter(rootPath, deferredQuery, groupKind, photoSort, mediaKind, 0),
-      ),
-    queryKey: ["photo-group-count", rootPath, deferredQuery, groupKind, photoSort, mediaKind],
-  });
-
-  const rootScanQuery = useQuery({
-    enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
-    queryFn: () => hasScanForRoot(rootPath),
-    queryKey: ["root-scan-state", rootPath],
-  });
-
-  const thumbnailCacheQuery = useQuery({
-    queryFn: getThumbnailCacheStats,
-    queryKey: ["thumbnail-cache-stats"],
-  });
-
   const manualAvailabilityQueries = useQueries({
     queries: manualRoots.map((path) => ({
       queryFn: () => pathExists(path),
@@ -291,24 +226,26 @@ export default function App() {
     })),
   });
 
-  const groups = useMemo(() => {
-    const loadedGroups = groupsQuery.data?.pages.flatMap((page) => page.slice(0, PAGE_SIZE)) ?? [];
-    return loadedGroups.filter((group) =>
-      mediaKind === "videos" ? group.videoCount > 0 : group.rawCount > 0 || group.jpgCount > 0,
-    );
-  }, [groupsQuery.data, mediaKind]);
-  const hasMoreGroups = groupsQuery.hasNextPage;
-
-  const detailQuery = useQuery({
-    enabled: Boolean(activeId),
-    queryFn: () => getPhotoGroup(activeId),
-    queryKey: ["photo-group-detail", mediaKind, activeId],
-  });
-
-  const metadataQuery = useQuery({
-    enabled: Boolean(activeId) && mediaKind === "photos",
-    queryFn: () => getPhotoGroupMetadata(activeId),
-    queryKey: ["photo-group-metadata", mediaKind, activeId],
+  const {
+    currentSummary,
+    detailQuery,
+    groupsQuery,
+    hasSource,
+    metadataQuery,
+    rootIsAvailable,
+    rootScanQuery,
+    thumbnailCacheQuery,
+    visibleGroupCount,
+    visibleGroups,
+    visibleHasMoreGroups,
+  } = useMediaLibrary({
+    activeId,
+    deferredQuery,
+    groupKind,
+    mediaKind,
+    photoSort,
+    rootPath,
+    scanSummary,
   });
 
   const drivesQuery = useQuery({
@@ -385,7 +322,7 @@ export default function App() {
     onSuccess: async (summary) => {
       setRootPath(summary.rootPath);
       setScanSummary(summary);
-      setSelected(new Set());
+      clearSelection();
       setActiveId("");
       setQuery("");
       await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
@@ -404,7 +341,7 @@ export default function App() {
     mutationFn: deletePhotoGroups,
     onSuccess: async (summary) => {
       closeDelete();
-      setSelected(new Set());
+      clearSelection();
       setActiveId("");
       await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
       await queryClient.invalidateQueries({ queryKey: ["photo-group-count"] });
@@ -426,27 +363,49 @@ export default function App() {
   const deleting = deleteMutation.isPending;
   const busy = scanning || deleting;
   const detectedRoots = drivesQuery.data ?? [];
-  const manualRootSet = useMemo(() => new Set(manualRoots), [manualRoots]);
-  const manualAvailability = useMemo(
-    () => new Map(manualRoots.map((path, index) => [path, manualAvailabilityQueries[index]?.data])),
-    [manualAvailabilityQueries, manualRoots],
-  );
-  const rootIsAvailable = !rootPath || rootAvailableQuery.data !== false;
-  const hasSource = Boolean(rootPath);
-  const activeSourceIsManual = Boolean(rootPath && manualRootSet.has(rootPath));
-  const activeSourceIsRemovable = Boolean(
-    rootPath && detectedRoots.some((drive) => drive.scanPath === rootPath),
-  );
-  const visibleGroups = hasSource && rootIsAvailable ? groups : [];
-  const visibleHasMoreGroups = hasSource && rootIsAvailable ? hasMoreGroups : false;
-  const currentSummary = hasSource
-    ? (summaryQuery.data ?? (scanSummary?.rootPath === rootPath ? scanSummary : null))
-    : null;
-  const visibleGroupCount = hasSource ? (groupCountQuery.data ?? visibleGroups.length) : 0;
+  const {
+    activeSourceIsManual,
+    activeSourceIsRemovable,
+    manualAvailability,
+    manualRootSet,
+    sourceName,
+  } = useSourceSelection({
+    detectedRoots,
+    manualAvailabilityValues: manualAvailabilityQueries.map((query) => query.data),
+    manualRoots,
+    rootPath,
+  });
   const sourceWasScanned =
     rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
-  const selectedDrive = detectedRoots.find((drive) => drive.scanPath === rootPath);
-  const sourceName = selectedDrive?.displayName ?? (rootPath ? fileName(rootPath) || rootPath : "");
+  const rememberActiveGroup = useCallback(
+    (id: string, sourcePath = rootPath) => {
+      setActiveId(id);
+      if (!sourcePath) return;
+      activeByRootRef.current = {
+        ...activeByRootRef.current,
+        [activeMemoryKey(sourcePath, mediaKind)]: id,
+      };
+    },
+    [mediaKind, rootPath],
+  );
+  const {
+    activateOrSelect,
+    clearSelection,
+    selected,
+    selectedGroups,
+    selectedIds,
+    selectionMode,
+    selectionModeRef,
+    selectAllVisibleGroups,
+    setSelected,
+    setSelectionMode,
+    toggleSelected,
+    toggleSelectionMode,
+  } = useSelectionMode({
+    hasSource,
+    onActivate: rememberActiveGroup,
+    visibleGroups,
+  });
   const scanProgressText =
     scanning && scanProgress?.rootPath === rootPath
       ? t("status.scanProgress", {
@@ -509,11 +468,6 @@ export default function App() {
     t,
   ]);
   const modalOpen = aboutOpen || settingsOpen || deleteOpen;
-  const selectedGroups = useMemo(
-    () => visibleGroups.filter((group) => selected.has(group.id)),
-    [selected, visibleGroups],
-  );
-  const selectedIds = useMemo(() => [...selected], [selected]);
   const deleteDetailQueries = useQueries({
     queries: selectedIds.map((id) => ({
       enabled: deleteOpen,
@@ -624,57 +578,14 @@ export default function App() {
     [clearActiveSource, rootPath, t],
   );
 
-  const toggleSelected = useCallback((id: string) => {
-    selectionAnchorRef.current = id;
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const rememberActiveGroup = useCallback(
-    (id: string, sourcePath = rootPath) => {
-      setActiveId(id);
-      if (!sourcePath) return;
-      activeByRootRef.current = {
-        ...activeByRootRef.current,
-        [activeMemoryKey(sourcePath, mediaKind)]: id,
-      };
+  const applyKindFilter = useCallback(
+    (nextKind: GroupKindFilter) => {
+      setGroupKind(nextKind);
+      clearSelection();
+      setActiveId("");
     },
-    [mediaKind, rootPath],
+    [clearSelection],
   );
-
-  const activateOrSelect = useCallback(
-    (id: string, range = false) => {
-      if (selectionModeRef.current) {
-        if (range && selectionAnchorRef.current) {
-          const start = visibleGroups.findIndex((group) => group.id === selectionAnchorRef.current);
-          const end = visibleGroups.findIndex((group) => group.id === id);
-          if (start >= 0 && end >= 0) {
-            const [from, to] = start < end ? [start, end] : [end, start];
-            setSelected((current) => {
-              const next = new Set(current);
-              visibleGroups.slice(from, to + 1).forEach((group) => next.add(group.id));
-              return next;
-            });
-            return;
-          }
-        }
-        toggleSelected(id);
-      } else {
-        rememberActiveGroup(id);
-      }
-    },
-    [rememberActiveGroup, toggleSelected, visibleGroups],
-  );
-
-  const applyKindFilter = useCallback((nextKind: GroupKindFilter) => {
-    setGroupKind(nextKind);
-    setSelected(new Set());
-    setActiveId("");
-  }, []);
 
   const switchMediaKind = useCallback(
     (nextKind: MediaKindFilter) => {
@@ -686,7 +597,7 @@ export default function App() {
       mediaFadeTimerRef.current = window.setTimeout(() => {
         setMediaKind(nextKind);
         setGroupKind("all");
-        setSelected(new Set());
+        clearSelection();
         setActiveId("");
         setInspectorTab("info");
         mediaFadeTimerRef.current = undefined;
@@ -697,22 +608,8 @@ export default function App() {
         }, MEDIA_SWITCH_SETTLE_MS);
       }, MEDIA_SWITCH_FADE_MS);
     },
-    [clearMediaTransitionTimers, mediaKind, mediaTransitioning],
+    [clearMediaTransitionTimers, clearSelection, mediaKind, mediaTransitioning],
   );
-
-  const toggleSelectionMode = useCallback(() => {
-    setSelectionMode((current) => {
-      if (current) setSelected(new Set());
-      return !current;
-    });
-  }, []);
-
-  const selectAllVisibleGroups = useCallback(() => {
-    if (!visibleGroups.length) return;
-    setSelectionMode(true);
-    setSelected(new Set(visibleGroups.map((group) => group.id)));
-    selectionAnchorRef.current = visibleGroups[0].id;
-  }, [visibleGroups]);
 
   const openPhotoContextMenu = useCallback((group: PhotoGroup, x: number, y: number) => {
     setContextMenu({ group, x, y });
@@ -735,44 +632,15 @@ export default function App() {
     deleteMutation.mutate([...selected]);
   }, [deleteMutation, selected]);
 
-  const openPreview = useCallback(
-    async (id: string, force = false) => {
-      if (selectionModeRef.current && !force) return;
-      setContextMenu(null);
-      rememberActiveGroup(id);
-      const state = { id, ids: visibleGroups.map((group) => group.id) };
-      window.localStorage.setItem(PREVIEW_WINDOW_STORAGE_KEY, JSON.stringify(state));
-      queryClient.prefetchQuery({
-        queryFn: () => getPhotoGroup(id),
-        queryKey: ["photo-group-detail", id],
-      });
-      const group = visibleGroups.find((item) => item.id === id);
-      const existing = await WebviewWindow.getByLabel(PREVIEW_WINDOW_LABEL);
-      if (existing) {
-        await emitTo(PREVIEW_WINDOW_LABEL, "preview-window-state", state);
-        await existing.setTitle(`${group?.stem ?? "Photo"} - Panasonic Pair Manager`);
-        await existing.setFocus();
-        return;
-      }
-      const previewWindow = new WebviewWindow(PREVIEW_WINDOW_LABEL, {
-        backgroundColor: PREVIEW_WINDOW_BACKGROUNDS[theme],
-        center: true,
-        focus: true,
-        height: 820,
-        minHeight: 520,
-        minWidth: 780,
-        title: "Photo Preview - Panasonic Pair Manager",
-        url: "/?previewWindow=1",
-        visible: false,
-        width: 1180,
-        zoomHotkeysEnabled: true,
-      });
-      previewWindow.once("tauri://error", (event) => {
-        setMessage(String(event.payload));
-      });
-    },
-    [queryClient, rememberActiveGroup, theme, visibleGroups],
-  );
+  const openPreview = usePreviewWindow({
+    onActivate: rememberActiveGroup,
+    onError: setMessage,
+    queryClient,
+    selectionModeRef,
+    setContextMenuClosed: closePhotoContextMenu,
+    theme,
+    visibleGroups,
+  });
 
   const openGroup = useCallback(
     async (id: string, force = false) => {
@@ -816,29 +684,6 @@ export default function App() {
   }, [groupsQuery.fetchNextPage, groupsQuery.hasNextPage, groupsQuery.isFetchingNextPage]);
 
   useEffect(() => {
-    selectionModeRef.current = selectionMode;
-  }, [selectionMode]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      const target = event.target;
-      const isEditable =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLElement && target.isContentEditable);
-      if (isEditable || !hasSource || !visibleGroups.length) return;
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
-        event.preventDefault();
-        setSelectionMode(true);
-        setSelected(new Set(visibleGroups.map((group) => group.id)));
-        selectionAnchorRef.current = visibleGroups[0].id;
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [hasSource, visibleGroups]);
-
-  useEffect(() => {
     return () => window.clearTimeout(refreshTimerRef.current);
   }, []);
 
@@ -847,12 +692,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setSelected(new Set());
+    clearSelection();
     setActiveId(
       rootPath ? (activeByRootRef.current[activeMemoryKey(rootPath, mediaKind)] ?? "") : "",
     );
     setInspectorTab("info");
-  }, [mediaKind, rootPath]);
+  }, [clearSelection, mediaKind, rootPath]);
 
   useEffect(() => {
     if (!visibleGroups.length) {
@@ -947,7 +792,7 @@ export default function App() {
           onQueryChange={(value) => {
             setQuery(value);
             setActiveId("");
-            setSelected(new Set());
+            clearSelection();
           }}
           onRescan={() => scan()}
           onSelectAll={selectAllVisibleGroups}
@@ -1014,7 +859,7 @@ export default function App() {
                 onSortChange={(value) => {
                   setPhotoSort(value);
                   setActiveId("");
-                  setSelected(new Set());
+                  clearSelection();
                 }}
               />
             }
