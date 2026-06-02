@@ -1,6 +1,13 @@
 @import "./tokens.css";
 @import "./base.css";
 @import "./layout.css";
-@import "./components/sidebar-gallery.css";
-@import "./components/overlays.css";
+@import "./components/workspace-panels.css";
+@import "./components/sources.css";
+@import "./components/scan-summary.css";
+@import "./components/gallery.css";
+@import "./components/inspector.css";
+@import "./components/overlay-base.css";
+@import "./components/preview.css";
+@import "./components/modals.css";
+@import "./components/context-menu.css";
 @import "./responsive.css";

@@ -1,0 +1,141 @@
+﻿.source-card.MuiButtonBase-root {
+  position: relative;
+  width: 100%;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  text-align: left;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-card) 72%, transparent);
+  color: var(--color-text);
+  justify-content: flex-start;
+  overflow: hidden;
+  transform: translateY(0);
+  transition: var(--motion-interactive);
+}
+
+.source-card.MuiButtonBase-root:not(.Mui-disabled):hover {
+  background: var(--color-hover-card);
+  border-color: var(--color-accent-border);
+}
+
+.source-card.MuiButtonBase-root:not(.Mui-disabled):active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.source-card.MuiButtonBase-root.Mui-focusVisible {
+  outline: 2px solid rgba(20, 127, 138, 0.45);
+  outline-offset: 2px;
+}
+
+.source-card.MuiButtonBase-root.active {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+}
+
+.source-card.MuiButtonBase-root.offline {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-surface);
+}
+
+.source-card.MuiButtonBase-root.offline .source-card-copy span {
+  color: var(--color-warning-text);
+}
+
+.source-card-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.source-card-copy strong,
+.source-card-copy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-card-copy span {
+  margin-top: 4px;
+  color: var(--color-muted);
+  font-size: var(--font-sm);
+}
+
+.source-card-remove {
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-muted);
+  flex: 0 0 auto;
+  margin-top: -2px;
+}
+
+.source-card-remove:not(:disabled):hover {
+  background: var(--color-warning-surface);
+  border-color: var(--color-warning-border);
+  color: var(--color-danger);
+}
+
+.drive-icon {
+  width: 20px;
+  height: 16px;
+  border-radius: var(--radius-xs);
+  background: linear-gradient(#d9d9d4, #95958e);
+  box-shadow: inset 0 -3px 0 #5d615e;
+  margin-top: 3px;
+}
+
+.empty-note {
+  color: var(--color-muted);
+  font-size: var(--font-md);
+  line-height: 1.5;
+}
+
+.empty-note.compact {
+  padding: 4px 2px 2px;
+  font-size: var(--font-sm);
+}
+
+.sources-module {
+  display: grid;
+}
+
+.source-group {
+  display: grid;
+  gap: 0;
+  padding: 14px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-card) 58%, transparent);
+}
+
+.source-section {
+  display: grid;
+  gap: 8px;
+  padding: 0 0 14px;
+}
+
+.source-section + .source-section {
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.source-section:last-child {
+  padding-bottom: 0;
+}
+
+.source-group-header {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-sm);
+  font-weight: 760;
+}

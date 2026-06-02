@@ -1,0 +1,14 @@
+﻿.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: var(--color-backdrop);
+  animation: modal-backdrop-in var(--motion-duration-medium) var(--motion-ease-out) both;
+  z-index: 30;
+}
+
+.modal-backdrop.closing {
+  animation: modal-backdrop-out var(--motion-duration-modal) var(--motion-ease-in) both;
+}

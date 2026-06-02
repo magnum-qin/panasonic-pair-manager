@@ -1,0 +1,239 @@
+﻿.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tabs button {
+  border: 0;
+  border-radius: var(--radius-none);
+  background: transparent;
+  padding: 14px 18px;
+  color: var(--color-muted);
+}
+
+.tabs .active {
+  color: var(--color-text-strong);
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+.tabs button:disabled {
+  opacity: 0.45;
+}
+
+.inspector-note {
+  padding: var(--space-4);
+}
+
+.inspector-empty {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 28px;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.inspector-empty svg {
+  color: var(--color-accent);
+  opacity: 0.86;
+}
+
+.inspector-empty strong {
+  color: var(--color-text);
+  font-size: var(--font-lg);
+}
+
+.inspector-empty span {
+  max-width: 230px;
+  line-height: 1.5;
+  font-size: var(--font-md);
+}
+
+.inspector-skeleton {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.skeleton-block,
+.skeleton-card,
+.skeleton-lines span {
+  border-radius: var(--radius-md);
+}
+
+.skeleton-title {
+  width: 42%;
+  height: 18px;
+}
+
+.skeleton-card {
+  height: 42px;
+}
+
+.skeleton-lines {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.skeleton-lines span {
+  height: 14px;
+}
+
+.skeleton-lines span:nth-child(2) {
+  width: 86%;
+}
+
+.skeleton-lines span:nth-child(3) {
+  width: 72%;
+}
+
+.skeleton-lines span:nth-child(4) {
+  width: 58%;
+}
+
+.metadata-error {
+  display: grid;
+  gap: var(--space-2);
+  padding: 12px;
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-surface);
+  color: var(--color-warning-text);
+  font-size: var(--font-md);
+}
+
+.metadata-error p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-warning-text);
+}
+
+.metadata-error span {
+  color: var(--color-muted);
+}
+
+.metadata-list {
+  display: grid;
+  gap: 1px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.metadata-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) minmax(0, 1.2fr);
+  gap: var(--space-3);
+  padding: 8px 10px;
+  background: var(--color-card);
+  font-size: var(--font-sm);
+}
+
+.metadata-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-muted);
+}
+
+.metadata-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  color: var(--color-text);
+  font-weight: 620;
+  text-align: right;
+}
+
+.file-list {
+  display: grid;
+  gap: 8px;
+}
+
+.file-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: var(--font-sm);
+  text-align: left;
+}
+
+.file-row:not(:disabled):hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+}
+
+.file-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-row em {
+  color: var(--color-muted);
+  font-style: normal;
+}
+
+.paths p {
+  overflow-wrap: anywhere;
+  color: var(--color-muted);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+}
+
+.statusbar {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 18px;
+  color: var(--color-accent);
+  font-size: var(--font-sm);
+}
+
+.status-message {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-message span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.status-info {
+  width: 24px;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-accent);
+}
+
+.status-info:not(:disabled):hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+}
