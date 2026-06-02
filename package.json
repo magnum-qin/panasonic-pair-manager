@@ -6,29 +6,42 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
+    "check": "npm run lint && npm run test && npm run build",
+    "lint": "eslint src && prettier --check .",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
+    "tauri:check": "cd src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test": "vitest run"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
-    "@mui/icons-material": "^9.0.0",
-    "@mui/material": "^9.0.0",
-    "@tanstack/react-query": "^5.100.6",
+    "@mui/icons-material": "^9.0.1",
+    "@mui/material": "^9.0.1",
+    "@tanstack/react-query": "^5.100.11",
     "@tanstack/react-virtual": "^3.13.24",
-    "@tauri-apps/api": "^2.0.0",
-    "lucide-react": "^0.468.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@tauri-apps/api": "^2.11.0",
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.6.2",
-    "vite": "^5.4.8"
+    "@eslint/js": "^10.0.1",
+    "@tauri-apps/cli": "^2.11.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "eslint": "^10.4.0",
+    "jiti": "^2.7.0",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.4",
+    "vite": "^8.0.13",
+    "vitest": "^4.1.7"
   }
 }
