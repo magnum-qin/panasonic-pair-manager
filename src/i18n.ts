@@ -32,6 +32,7 @@ export type TranslationKey =
   | "common.camera"
   | "common.captureTime"
   | "common.dimensions"
+  | "common.duration"
   | "common.files"
   | "common.folder"
   | "common.groups"

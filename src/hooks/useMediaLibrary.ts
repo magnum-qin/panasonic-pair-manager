@@ -92,7 +92,7 @@ export function useMediaLibrary({
   });
 
   const metadataQuery = useQuery({
-    enabled: Boolean(activeId) && mediaKind === "photos",
+    enabled: Boolean(activeId),
     queryFn: () => getPhotoGroupMetadata(activeId),
     queryKey: ["photo-group-metadata", mediaKind, activeId],
   });

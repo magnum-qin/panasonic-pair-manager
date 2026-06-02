@@ -44,7 +44,7 @@ export function InspectorPanel({
         <button
           className={inspectorTab === "metadata" ? "active" : ""}
           onClick={() => onTabChange("metadata")}
-          disabled={!activeId || mediaKind === "videos"}
+          disabled={!activeId}
         >
           {t("common.metadata")}
         </button>
@@ -91,14 +91,36 @@ export function InspectorPanel({
                   (metadataFetching ? t("metadata.reading") : t("metadata.unknown"))
                 }
               />
-              <SummaryRow
-                label={t("common.lens")}
-                value={
-                  metadata?.lens ??
-                  detail.lens ??
-                  (metadataFetching ? t("metadata.reading") : t("metadata.unknown"))
-                }
-              />
+              {mediaKind === "videos" ? (
+                <>
+                  <SummaryRow
+                    label={t("common.dimensions")}
+                    value={
+                      metadata?.width && metadata.height
+                        ? `${metadata.width} x ${metadata.height}`
+                        : metadataFetching
+                          ? t("metadata.reading")
+                          : t("metadata.unknown")
+                    }
+                  />
+                  <SummaryRow
+                    label={t("common.duration")}
+                    value={
+                      metadataValue(metadata, "Duration") ??
+                      (metadataFetching ? t("metadata.reading") : t("metadata.unknown"))
+                    }
+                  />
+                </>
+              ) : (
+                <SummaryRow
+                  label={t("common.lens")}
+                  value={
+                    metadata?.lens ??
+                    detail.lens ??
+                    (metadataFetching ? t("metadata.reading") : t("metadata.unknown"))
+                  }
+                />
+              )}
               <SummaryRow label={t("common.folder")} value={detail.folderName} />
               <SummaryRow label={t("common.totalSize")} value={formatBytes(detail.totalSize)} />
             </section>
@@ -132,4 +154,9 @@ export function InspectorPanel({
       </div>
     </aside>
   );
+}
+
+function metadataValue(metadata: PhotoGroupMetadata | undefined, tag: string) {
+  const normalizedTag = tag.toLowerCase();
+  return metadata?.items.find((item) => item.tag.toLowerCase() === normalizedTag)?.value;
 }

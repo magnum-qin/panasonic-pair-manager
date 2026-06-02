@@ -935,7 +935,11 @@ export default function App() {
           group={contextMenu.group}
           onClose={closePhotoContextMenu}
           onDelete={() => deleteContextGroup(contextMenu.group)}
-          onOpen={() => openPreview(contextMenu.group.id, true)}
+          onOpen={() =>
+            mediaKind === "videos"
+              ? openGroup(contextMenu.group.id, true)
+              : openPreview(contextMenu.group.id, true)
+          }
           onOpenExternal={() => openGroup(contextMenu.group.id, true)}
           t={t}
           x={contextMenu.x}

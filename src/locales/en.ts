@@ -19,6 +19,7 @@ export const en: TranslationMap = {
   "common.camera": "Camera",
   "common.captureTime": "Capture Time",
   "common.dimensions": "Dimensions",
+  "common.duration": "Duration",
   "common.files": "Files",
   "common.folder": "Folder",
   "common.groups": "Photos",
