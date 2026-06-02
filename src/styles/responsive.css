@@ -1,0 +1,148 @@
+@media (max-width: 1100px) {
+  .workspace {
+    grid-template-columns: minmax(200px, 230px) minmax(0, 1fr) minmax(220px, 280px);
+  }
+
+  .toolbar {
+    gap: 8px;
+    padding: 9px 12px;
+  }
+
+  .size-control {
+    min-width: 174px;
+  }
+}
+
+@media (max-width: 860px) {
+  .workspace {
+    grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(180px, 32vh);
+  }
+
+  .workspace.inspector-collapsed {
+    grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .inspector {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
+  }
+
+  .gallery {
+    grid-column: 2;
+  }
+
+  .toolbar-spacer {
+    flex-basis: auto;
+    height: 0;
+    order: initial;
+  }
+
+  .size-control,
+  .sort-control {
+    min-width: 0;
+  }
+
+  .searchbox {
+    width: min(260px, 100%);
+  }
+}
+
+@media (max-width: 680px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) minmax(180px, 30vh);
+  }
+
+  .workspace.inspector-collapsed {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .sidebar {
+    max-height: 220px;
+  }
+
+  .gallery {
+    grid-column: 1;
+  }
+
+  .setting-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@keyframes skeleton-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes lazy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-backdrop-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.975);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-pop-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}

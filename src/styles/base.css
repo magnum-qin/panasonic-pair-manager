@@ -1,0 +1,136 @@
+body {
+  margin: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--color-bg);
+  overscroll-behavior: none;
+}
+
+button,
+input {
+  font: inherit;
+  color: var(--color-text);
+}
+
+input::placeholder {
+  color: var(--color-muted);
+}
+
+select,
+option {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--color-control-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  border-radius: var(--radius-md);
+  padding: 9px 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-md);
+  font-weight: 650;
+  cursor: pointer;
+  transform: translateY(0);
+  transition: var(--motion-interactive);
+  will-change: transform;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+:root[data-theme="graphite"] button:disabled {
+  opacity: 0.72;
+}
+
+button:not(:disabled):hover {
+  background: var(--color-button-hover);
+  border-color: var(--color-accent-border);
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.985);
+}
+
+button:focus-visible {
+  outline: 2px solid rgba(20, 127, 138, 0.45);
+  outline-offset: 2px;
+}
+
+button[hidden] {
+  display: none;
+}
+
+.ui-button.MuiButtonBase-root {
+  min-height: 38px;
+  border: 1px solid var(--color-control-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  border-radius: var(--radius-md);
+  padding: 9px 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-md);
+  font-weight: 650;
+  line-height: 1.35;
+  transform: translateY(0);
+  transition: var(--motion-interactive);
+  will-change: transform;
+}
+
+.ui-button.MuiButtonBase-root:not(.Mui-disabled):hover {
+  background: var(--color-button-hover);
+  border-color: var(--color-accent-border);
+}
+
+.ui-button.MuiButtonBase-root:not(.Mui-disabled):active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.ui-button.MuiButtonBase-root.Mui-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.icon-button.MuiButtonBase-root {
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.icon-button.MuiButtonBase-root:not(.Mui-disabled):hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+}
+
+.heading-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.active-tool {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.ui-button.MuiButtonBase-root.active-tool {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}

@@ -1,44 +1,22 @@
 import {
-  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
   useQueries,
 } from "@tanstack/react-query";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
-import {
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  FileText,
-  FolderPlus,
-  Image,
-  Images,
-  Info,
-  Layers,
-  Link2,
-  RefreshCw,
-  Search,
-  Settings,
-  SquareCheckBig,
-  Trash2,
-  X,
-} from "lucide-react";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { CheckCircle2, Info, Settings, Video } from "lucide-react";
 import {
   useCallback,
   useDeferredValue,
   useEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
-  type ReactNode,
+  Suspense,
 } from "react";
 import {
   countPhotoGroups,
@@ -46,7 +24,6 @@ import {
   deletePhotoGroups,
   getPhotoGroup,
   getPhotoGroupMetadata,
-  getPhotoThumbnail,
   getScanSummary,
   getThumbnailCacheStats,
   hasScanForRoot,
@@ -58,109 +35,56 @@ import {
   scanRoot,
   selectRootFolder,
 } from "./api";
-import { Button } from "./components/Button";
-import { IconButton } from "./components/IconButton";
 import { PhotoGrid } from "./components/PhotoGrid";
-import { SidebarItem } from "./components/SidebarItem";
-import { SummaryButton, SummaryRow } from "./components/Summary";
-import { ToolbarButton } from "./components/ToolbarButton";
 import {
-  LANGUAGE_OPTIONS,
-  normalizeLanguage,
-  translate,
-  type LanguageCode,
-  type TranslationKey,
-} from "./i18n";
-import { THEME_OPTIONS, normalizeTheme, type ThemeCode } from "./theme-options";
-import type { DriveCandidate, GroupKindFilter, PhotoGroup, PhotoGroupFilter, ScanProgress, ScanSummary } from "./types";
-import { fileName, formatBytes, PAGE_SIZE } from "./utils";
+  GALLERY_LAYOUT_FADE_MS,
+  GALLERY_LAYOUT_SETTLE_MS,
+  MEDIA_SWITCH_FADE_MS,
+  MEDIA_SWITCH_SETTLE_MS,
+  MANUAL_ROOTS_STORAGE_KEY,
+  PHOTO_SORT_OPTIONS,
+  PREVIEW_WINDOW_BACKGROUNDS,
+  PREVIEW_WINDOW_LABEL,
+  PREVIEW_WINDOW_STORAGE_KEY,
+  type CardSizePreset,
+} from "./features/app/app-config";
+import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
+import {
+  activeMemoryKey,
+  dirName,
+  getGroupsFilter,
+  isPreviewWindowRoute,
+  loadStoredManualRoots,
+  makeTranslator,
+  nearestCardSizePreset,
+} from "./features/app/app-utils";
+import { MainToolbar } from "./features/app/MainToolbar";
+import { GalleryControls } from "./features/gallery/GalleryControls";
+import { PhotoContextMenu } from "./features/gallery/PhotoContextMenu";
+import { InspectorPanel } from "./features/inspector/InspectorPanel";
+import { SourcePanel } from "./features/sources/SourcePanel";
+import { normalizeLanguage, translate, type LanguageCode } from "./i18n";
+import { normalizeTheme, type ThemeCode } from "./theme-options";
+import type {
+  DriveCandidate,
+  GroupKindFilter,
+  MediaKindFilter,
+  PhotoGroup,
+  PhotoSortMode,
+  ScanProgress,
+  ScanSummary,
+} from "./types";
+import { fileName, PAGE_SIZE } from "./utils";
 
-const CARD_SIZE_PRESETS = [
-  { label: "S", value: 190 },
-  { label: "M", value: 230 },
-  { label: "L", value: 280 },
-  { label: "XL", value: 330 },
-] as const;
-
-type CardSizePreset = (typeof CARD_SIZE_PRESETS)[number]["value"];
-
-const MANUAL_ROOTS_STORAGE_KEY = "ppm.manualRoots";
-const DELETE_FILE_PREVIEW_LIMIT = 18;
-const PREVIEW_WINDOW_LABEL = "photo-preview";
-const PREVIEW_WINDOW_STORAGE_KEY = "ppm.previewWindowState";
-
-interface PreviewWindowState {
-  id: string;
-  ids: string[];
-}
-
-function loadStoredManualRoots() {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(MANUAL_ROOTS_STORAGE_KEY) ?? "[]");
-    if (!Array.isArray(parsed)) return [];
-    return Array.from(
-      new Set(
-        parsed.filter((path): path is string => typeof path === "string" && Boolean(path.trim())),
-      ),
-    );
-  } catch {
-    return [];
-  }
-}
-
-function nearestCardSizePreset(value: number): CardSizePreset {
-  return CARD_SIZE_PRESETS.reduce((nearest, preset) =>
-    Math.abs(preset.value - value) < Math.abs(nearest.value - value) ? preset : nearest,
-  ).value;
-}
-
-function makeTranslator(language: LanguageCode) {
-  return (key: TranslationKey, values?: Record<string, string | number>) =>
-    translate(language, key, values);
-}
-
-function getGroupsFilter(
-  rootPath: string,
-  query: string,
-  groupKind: GroupKindFilter,
-  offset: number,
-): PhotoGroupFilter {
-  return {
-    rootPath: rootPath || undefined,
-    query: query || undefined,
-    groupKind: groupKind === "all" ? undefined : groupKind,
-    limit: PAGE_SIZE + 1,
-    offset,
-  };
-}
-
-function dirName(path: string) {
-  const index = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
-  return index > 0 ? path.slice(0, index) : path;
-}
-
-function isPreviewWindowRoute() {
-  return new URLSearchParams(window.location.search).get("previewWindow") === "1";
-}
-
-function loadPreviewWindowState(): PreviewWindowState {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(PREVIEW_WINDOW_STORAGE_KEY) ?? "{}");
-    if (!parsed || typeof parsed.id !== "string") return { id: "", ids: [] };
-    return {
-      id: parsed.id,
-      ids: Array.isArray(parsed.ids)
-        ? parsed.ids.filter((id: unknown): id is string => typeof id === "string")
-        : [],
-    };
-  } catch {
-    return { id: "", ids: [] };
-  }
-}
+const PreviewWindow = lazy(() => import("./PreviewWindow"));
 
 export default function App() {
   if (isPreviewWindowRoute()) {
-    return <PreviewWindow />;
+    return (
+      <Suspense fallback={null}>
+        <PreviewWindow />
+      </Suspense>
+    );
   }
 
   const queryClient = useQueryClient();
@@ -169,6 +93,7 @@ export default function App() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [groupKind, setGroupKind] = useState<GroupKindFilter>("all");
+  const [mediaKind, setMediaKind] = useState<MediaKindFilter>("photos");
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [language, setLanguage] = useState<LanguageCode>(() =>
     normalizeLanguage(window.localStorage.getItem("ppm.language")),
@@ -184,6 +109,15 @@ export default function App() {
   const [closingModal, setClosingModal] = useState<"about" | "settings" | "delete" | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<"info" | "metadata">("info");
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [galleryLayoutTransitioning, setGalleryLayoutTransitioning] = useState(false);
+  const [mediaTransitioning, setMediaTransitioning] = useState(false);
+  const [photoSort, setPhotoSort] = useState<PhotoSortMode>(() => {
+    const stored = window.localStorage.getItem("ppm.photoSort");
+    return PHOTO_SORT_OPTIONS.some((option) => option.value === stored)
+      ? (stored as PhotoSortMode)
+      : "captureAsc";
+  });
   const [contextMenu, setContextMenu] = useState<{
     group: PhotoGroup;
     x: number;
@@ -201,20 +135,65 @@ export default function App() {
   const selectionAnchorRef = useRef<string>("");
   const knownDrivePathsRef = useRef<Set<string>>(new Set());
   const seenRemovablePathsRef = useRef<Set<string>>(new Set());
+  const initialManualRootSelectedRef = useRef(false);
   const refreshTimerRef = useRef<number | undefined>(undefined);
   const refreshDelayTimerRef = useRef<number | undefined>(undefined);
   const refreshLockedRef = useRef(false);
+  const galleryFadeTimerRef = useRef<number | undefined>(undefined);
+  const gallerySettleTimerRef = useRef<number | undefined>(undefined);
+  const mediaFadeTimerRef = useRef<number | undefined>(undefined);
+  const mediaSettleTimerRef = useRef<number | undefined>(undefined);
 
-  const clearActiveSource = useCallback(
-    (nextMessage?: string) => {
-      setRootPath("");
-      setActiveId("");
-      setSelected(new Set());
-      setScanSummary(null);
-      if (nextMessage) setMessage(nextMessage);
-    },
-    [],
-  );
+  const clearActiveSource = useCallback((nextMessage?: string) => {
+    setRootPath("");
+    setActiveId("");
+    setSelected(new Set());
+    setScanSummary(null);
+    if (nextMessage) setMessage(nextMessage);
+  }, []);
+
+  const clearGalleryLayoutTimers = useCallback(() => {
+    if (galleryFadeTimerRef.current !== undefined) {
+      window.clearTimeout(galleryFadeTimerRef.current);
+      galleryFadeTimerRef.current = undefined;
+    }
+    if (gallerySettleTimerRef.current !== undefined) {
+      window.clearTimeout(gallerySettleTimerRef.current);
+      gallerySettleTimerRef.current = undefined;
+    }
+  }, []);
+
+  const toggleInspector = useCallback(() => {
+    if (galleryLayoutTransitioning) return;
+
+    clearGalleryLayoutTimers();
+    setGalleryLayoutTransitioning(true);
+
+    galleryFadeTimerRef.current = window.setTimeout(() => {
+      setInspectorCollapsed((current) => !current);
+      galleryFadeTimerRef.current = undefined;
+
+      gallerySettleTimerRef.current = window.setTimeout(() => {
+        setGalleryLayoutTransitioning(false);
+        gallerySettleTimerRef.current = undefined;
+      }, GALLERY_LAYOUT_SETTLE_MS);
+    }, GALLERY_LAYOUT_FADE_MS);
+  }, [clearGalleryLayoutTimers, galleryLayoutTransitioning]);
+
+  useEffect(() => () => clearGalleryLayoutTimers(), [clearGalleryLayoutTimers]);
+
+  const clearMediaTransitionTimers = useCallback(() => {
+    if (mediaFadeTimerRef.current !== undefined) {
+      window.clearTimeout(mediaFadeTimerRef.current);
+      mediaFadeTimerRef.current = undefined;
+    }
+    if (mediaSettleTimerRef.current !== undefined) {
+      window.clearTimeout(mediaSettleTimerRef.current);
+      mediaSettleTimerRef.current = undefined;
+    }
+  }, []);
+
+  useEffect(() => () => clearMediaTransitionTimers(), [clearMediaTransitionTimers]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -229,6 +208,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(MANUAL_ROOTS_STORAGE_KEY, JSON.stringify(manualRoots));
   }, [manualRoots]);
+
+  useEffect(() => {
+    window.localStorage.setItem("ppm.photoSort", photoSort);
+  }, [photoSort]);
 
   const closeModal = useCallback(
     (modal: "about" | "settings" | "delete", setOpen: (open: boolean) => void) => {
@@ -261,16 +244,17 @@ export default function App() {
   });
 
   const groupsQuery = useInfiniteQuery({
-    queryKey: ["photo-groups", rootPath, deferredQuery, groupKind],
+    queryKey: ["photo-groups", rootPath, deferredQuery, groupKind, photoSort, mediaKind],
     queryFn: ({ pageParam }) =>
-      listPhotoGroups(getGroupsFilter(rootPath, deferredQuery, groupKind, pageParam)),
+      listPhotoGroups(
+        getGroupsFilter(rootPath, deferredQuery, groupKind, photoSort, mediaKind, pageParam),
+      ),
     enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
     initialPageParam: 0,
     getNextPageParam: (lastPage, pages) => {
       if (lastPage.length <= PAGE_SIZE) return undefined;
       return pages.reduce((sum, page) => sum + Math.min(page.length, PAGE_SIZE), 0);
     },
-    placeholderData: keepPreviousData,
   });
 
   const summaryQuery = useQuery({
@@ -281,8 +265,11 @@ export default function App() {
 
   const groupCountQuery = useQuery({
     enabled: Boolean(rootPath) && rootAvailableQuery.data !== false,
-    queryFn: () => countPhotoGroups(getGroupsFilter(rootPath, deferredQuery, groupKind, 0)),
-    queryKey: ["photo-group-count", rootPath, deferredQuery, groupKind],
+    queryFn: () =>
+      countPhotoGroups(
+        getGroupsFilter(rootPath, deferredQuery, groupKind, photoSort, mediaKind, 0),
+      ),
+    queryKey: ["photo-group-count", rootPath, deferredQuery, groupKind, photoSort, mediaKind],
   });
 
   const rootScanQuery = useQuery({
@@ -304,22 +291,24 @@ export default function App() {
     })),
   });
 
-  const groups = useMemo(
-    () => groupsQuery.data?.pages.flatMap((page) => page.slice(0, PAGE_SIZE)) ?? [],
-    [groupsQuery.data],
-  );
+  const groups = useMemo(() => {
+    const loadedGroups = groupsQuery.data?.pages.flatMap((page) => page.slice(0, PAGE_SIZE)) ?? [];
+    return loadedGroups.filter((group) =>
+      mediaKind === "videos" ? group.videoCount > 0 : group.rawCount > 0 || group.jpgCount > 0,
+    );
+  }, [groupsQuery.data, mediaKind]);
   const hasMoreGroups = groupsQuery.hasNextPage;
 
   const detailQuery = useQuery({
     enabled: Boolean(activeId),
     queryFn: () => getPhotoGroup(activeId),
-    queryKey: ["photo-group-detail", activeId],
+    queryKey: ["photo-group-detail", mediaKind, activeId],
   });
 
   const metadataQuery = useQuery({
-    enabled: Boolean(activeId),
+    enabled: Boolean(activeId) && mediaKind === "photos",
     queryFn: () => getPhotoGroupMetadata(activeId),
-    queryKey: ["photo-group-metadata", activeId],
+    queryKey: ["photo-group-metadata", mediaKind, activeId],
   });
 
   const drivesQuery = useQuery({
@@ -424,7 +413,9 @@ export default function App() {
       setMessage(
         t("status.deleted", {
           count: summary.files - summary.failed.length,
-          failed: summary.failed.length ? t("status.deletedFailed", { count: summary.failed.length }) : "",
+          failed: summary.failed.length
+            ? t("status.deletedFailed", { count: summary.failed.length })
+            : "",
         }),
       );
     },
@@ -437,25 +428,23 @@ export default function App() {
   const detectedRoots = drivesQuery.data ?? [];
   const manualRootSet = useMemo(() => new Set(manualRoots), [manualRoots]);
   const manualAvailability = useMemo(
-    () =>
-      new Map(
-        manualRoots.map((path, index) => [
-          path,
-          manualAvailabilityQueries[index]?.data,
-        ]),
-      ),
+    () => new Map(manualRoots.map((path, index) => [path, manualAvailabilityQueries[index]?.data])),
     [manualAvailabilityQueries, manualRoots],
   );
   const rootIsAvailable = !rootPath || rootAvailableQuery.data !== false;
   const hasSource = Boolean(rootPath);
   const activeSourceIsManual = Boolean(rootPath && manualRootSet.has(rootPath));
-  const activeSourceIsRemovable = Boolean(rootPath && detectedRoots.some((drive) => drive.scanPath === rootPath));
+  const activeSourceIsRemovable = Boolean(
+    rootPath && detectedRoots.some((drive) => drive.scanPath === rootPath),
+  );
   const visibleGroups = hasSource && rootIsAvailable ? groups : [];
   const visibleHasMoreGroups = hasSource && rootIsAvailable ? hasMoreGroups : false;
-  const currentSummary =
-    hasSource ? (summaryQuery.data ?? (scanSummary?.rootPath === rootPath ? scanSummary : null)) : null;
+  const currentSummary = hasSource
+    ? (summaryQuery.data ?? (scanSummary?.rootPath === rootPath ? scanSummary : null))
+    : null;
   const visibleGroupCount = hasSource ? (groupCountQuery.data ?? visibleGroups.length) : 0;
-  const sourceWasScanned = rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
+  const sourceWasScanned =
+    rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
   const selectedDrive = detectedRoots.find((drive) => drive.scanPath === rootPath);
   const sourceName = selectedDrive?.displayName ?? (rootPath ? fileName(rootPath) || rootPath : "");
   const scanProgressText =
@@ -492,10 +481,13 @@ export default function App() {
     }
     if (hasSource && sourceWasScanned) {
       return {
-        title: t("empty.noGroups"),
-        description: activeSourceIsRemovable
-          ? t("empty.noGroupsInRemovable")
-          : t("empty.noGroupsInSource"),
+        title: mediaKind === "videos" ? t("empty.noVideos") : t("empty.noGroups"),
+        description:
+          mediaKind === "videos"
+            ? t("empty.noVideosInSource")
+            : activeSourceIsRemovable
+              ? t("empty.noGroupsInRemovable")
+              : t("empty.noGroupsInSource"),
       };
     }
     return {
@@ -506,6 +498,7 @@ export default function App() {
     activeSourceIsManual,
     activeSourceIsRemovable,
     hasSource,
+    mediaKind,
     rootIsAvailable,
     rootPath,
     rootScanQuery.data,
@@ -540,14 +533,40 @@ export default function App() {
         acc.groups += 1;
         acc.rawFiles += group.rawCount;
         acc.jpgFiles += group.jpgCount;
+        acc.videoFiles += group.videoCount;
         acc.sidecarFiles += group.sidecarCount;
-        acc.files += group.rawCount + group.jpgCount + group.sidecarCount;
+        acc.files += group.rawCount + group.jpgCount + group.videoCount + group.sidecarCount;
         acc.totalSize += group.totalSize;
         return acc;
       },
-      { groups: 0, files: 0, rawFiles: 0, jpgFiles: 0, sidecarFiles: 0, totalSize: 0 },
+      {
+        groups: 0,
+        files: 0,
+        rawFiles: 0,
+        jpgFiles: 0,
+        videoFiles: 0,
+        sidecarFiles: 0,
+        totalSize: 0,
+      },
     );
   }, [selectedGroups]);
+
+  useEffect(() => {
+    if (initialManualRootSelectedRef.current || rootPath || !manualRoots.length) return;
+
+    const pending = manualAvailabilityQueries.some((query) => query.isLoading || query.isFetching);
+    if (pending) return;
+
+    initialManualRootSelectedRef.current = true;
+    const firstAvailableRoot =
+      manualRoots.find((path, index) => manualAvailabilityQueries[index]?.data !== false) ?? "";
+    if (!firstAvailableRoot) return;
+
+    setRootPath(firstAvailableRoot);
+    setMessage(
+      t("source.selectedManual", { name: fileName(firstAvailableRoot) || firstAvailableRoot }),
+    );
+  }, [manualAvailabilityQueries, manualRoots, rootPath, t]);
 
   const chooseFolder = useCallback(async () => {
     const path = await selectRootFolder();
@@ -621,10 +640,10 @@ export default function App() {
       if (!sourcePath) return;
       activeByRootRef.current = {
         ...activeByRootRef.current,
-        [sourcePath]: id,
+        [activeMemoryKey(sourcePath, mediaKind)]: id,
       };
     },
-    [rootPath],
+    [mediaKind, rootPath],
   );
 
   const activateOrSelect = useCallback(
@@ -657,12 +676,43 @@ export default function App() {
     setActiveId("");
   }, []);
 
+  const switchMediaKind = useCallback(
+    (nextKind: MediaKindFilter) => {
+      if (nextKind === mediaKind || mediaTransitioning) return;
+
+      clearMediaTransitionTimers();
+      setMediaTransitioning(true);
+
+      mediaFadeTimerRef.current = window.setTimeout(() => {
+        setMediaKind(nextKind);
+        setGroupKind("all");
+        setSelected(new Set());
+        setActiveId("");
+        setInspectorTab("info");
+        mediaFadeTimerRef.current = undefined;
+
+        mediaSettleTimerRef.current = window.setTimeout(() => {
+          setMediaTransitioning(false);
+          mediaSettleTimerRef.current = undefined;
+        }, MEDIA_SWITCH_SETTLE_MS);
+      }, MEDIA_SWITCH_FADE_MS);
+    },
+    [clearMediaTransitionTimers, mediaKind, mediaTransitioning],
+  );
+
   const toggleSelectionMode = useCallback(() => {
     setSelectionMode((current) => {
       if (current) setSelected(new Set());
       return !current;
     });
   }, []);
+
+  const selectAllVisibleGroups = useCallback(() => {
+    if (!visibleGroups.length) return;
+    setSelectionMode(true);
+    setSelected(new Set(visibleGroups.map((group) => group.id)));
+    selectionAnchorRef.current = visibleGroups[0].id;
+  }, [visibleGroups]);
 
   const openPhotoContextMenu = useCallback((group: PhotoGroup, x: number, y: number) => {
     setContextMenu({ group, x, y });
@@ -705,21 +755,23 @@ export default function App() {
         return;
       }
       const previewWindow = new WebviewWindow(PREVIEW_WINDOW_LABEL, {
+        backgroundColor: PREVIEW_WINDOW_BACKGROUNDS[theme],
         center: true,
-        decorations: false,
         focus: true,
         height: 820,
         minHeight: 520,
         minWidth: 780,
         title: "Photo Preview - Panasonic Pair Manager",
         url: "/?previewWindow=1",
+        visible: false,
         width: 1180,
+        zoomHotkeysEnabled: true,
       });
       previewWindow.once("tauri://error", (event) => {
         setMessage(String(event.payload));
       });
     },
-    [queryClient, rememberActiveGroup, visibleGroups],
+    [queryClient, rememberActiveGroup, theme, visibleGroups],
   );
 
   const openGroup = useCallback(
@@ -796,9 +848,11 @@ export default function App() {
 
   useEffect(() => {
     setSelected(new Set());
-    setActiveId(rootPath ? (activeByRootRef.current[rootPath] ?? "") : "");
+    setActiveId(
+      rootPath ? (activeByRootRef.current[activeMemoryKey(rootPath, mediaKind)] ?? "") : "",
+    );
     setInspectorTab("info");
-  }, [rootPath]);
+  }, [mediaKind, rootPath]);
 
   useEffect(() => {
     if (!visibleGroups.length) {
@@ -808,13 +862,15 @@ export default function App() {
 
     if (activeId && visibleGroups.some((group) => group.id === activeId)) return;
 
-    const rememberedId = rootPath ? activeByRootRef.current[rootPath] : "";
+    const rememberedId = rootPath
+      ? activeByRootRef.current[activeMemoryKey(rootPath, mediaKind)]
+      : "";
     const nextId =
       rememberedId && visibleGroups.some((group) => group.id === rememberedId)
         ? rememberedId
         : visibleGroups[0].id;
     rememberActiveGroup(nextId, rootPath);
-  }, [activeId, rememberActiveGroup, rootPath, visibleGroups]);
+  }, [activeId, mediaKind, rememberActiveGroup, rootPath, visibleGroups]);
 
   useEffect(() => {
     if (hasSource) return;
@@ -857,348 +913,175 @@ export default function App() {
     setRootPath(scanPath);
     setMessage(t("status.detectedIndexing", { name: nextCandidate.displayName }));
     scanMutation.mutate(scanPath);
-  }, [busy, clearActiveSource, drivesQuery.data, manualRootSet, queryClient, rootPath, scanMutation, t]);
+  }, [
+    busy,
+    clearActiveSource,
+    drivesQuery.data,
+    manualRootSet,
+    queryClient,
+    rootPath,
+    scanMutation,
+    t,
+  ]);
 
   return (
     <div className={`app-shell ${selectionMode ? "selection-mode" : ""}`}>
       <div className="app-content" aria-hidden={modalOpen ? true : undefined}>
-      <div className="toolbar">
-        {hasSource && (
-          <>
-            <ToolbarButton disabled={scanning || deleting || !rootIsAvailable} onClick={() => scan()}>
-              <RefreshCw size={17} /> {t("action.rescan")}
-            </ToolbarButton>
-            <ToolbarButton
-              active={selectionMode}
-              disabled={deleting || !visibleGroups.length}
-              onClick={toggleSelectionMode}
-            >
-              <SquareCheckBig size={17} /> {t("action.multiSelect")}
-            </ToolbarButton>
-            {selectionMode && (
-              <ToolbarButton
-                disabled={deleting || !selected.size}
-                onClick={() => {
-                  setClosingModal(null);
-                  setDeleteOpen(true);
-                }}
-                variant="danger"
-              >
-                <Trash2 size={17} /> {t("action.deleteSelected")}
-              </ToolbarButton>
-            )}
-          </>
-        )}
-        {!hasSource && (
-          <ToolbarButton disabled={deleting} onClick={chooseFolder}>
-            <FolderPlus size={17} /> {t("action.chooseFolder")}
-          </ToolbarButton>
-        )}
-        <div className="toolbar-spacer" />
-        <div className="size-control" aria-label={t("size.card")} title={t("size.card")}>
-          <span>{t("size.card")}</span>
-          <div className="size-options" role="group" aria-label={t("size.presets")}>
-            {CARD_SIZE_PRESETS.map((preset) => (
-              <button
-                aria-pressed={cardSize === preset.value}
-                className={cardSize === preset.value ? "active" : ""}
-                key={preset.value}
-                onClick={() => updateCardSize(preset.value)}
-                type="button"
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {hasSource && (
-          <label className="searchbox">
-            <Search size={16} />
-            <input
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActiveId("");
-                setSelected(new Set());
-              }}
-              placeholder={t("search.placeholder")}
-            />
-          </label>
-        )}
-        {selectionMode && (
-          <div className="selection-meter">{t("common.selected", { count: selected.size })}</div>
-        )}
-      </div>
-
-      <main className="workspace">
-        <aside className="sidebar">
-          <section className="sidebar-module sources-module">
-            <div className="source-group">
-              <div className="source-group-header">
-                <span>{t("source.fixedFolders")}</span>
-                <IconButton disabled={deleting} label={t("source.addFolder")} onClick={chooseFolder}>
-                  <FolderPlus size={15} />
-                </IconButton>
-              </div>
-              {manualRoots.length ? (
-                manualRoots.map((path) => (
-                  <SidebarItem
-                    active={rootPath === path}
-                    disabled={deleting}
-                    key={path}
-                    label={fileName(path) || path}
-                    onClear={() => clearManualRoot(path)}
-                    onClick={() => selectManualRoot(path)}
-                    removeLabel={t("source.removeFolder")}
-                    subtitle={
-                      manualAvailability.get(path) === false
-                        ? `${path} · ${t("source.unavailable")}`
-                        : path
-                    }
-                    tone={manualAvailability.get(path) === false ? "offline" : undefined}
-                  />
-                ))
-              ) : (
-                <div className="empty-note compact">{t("source.fixedEmpty")}</div>
-              )}
-            </div>
-
-            <div className="source-group">
-              <div className="source-group-header">
-                <span>{t("source.removableDevices")}</span>
-                <IconButton
-                  disabled={false}
-                  label={t("source.refresh")}
-                  onClick={refreshRemovableRoots}
-                >
-                  <RefreshCw size={14} />
-                </IconButton>
-              </div>
-              {detectedRoots.length ? (
-                <>
-                  {detectedRoots.map((drive) => (
-                    <SidebarItem
-                      active={rootPath === drive.scanPath}
-                      disabled={deleting}
-                      key={drive.scanPath}
-                      label={drive.displayName}
-                      onClick={() => {
-                        setRootPath(drive.scanPath);
-                        if (scanMutation.isPending) {
-                          setMessage(t("source.selectedManual", { name: drive.displayName }));
-                          return;
-                        }
-                        setMessage(t("status.detectedIndexing", { name: drive.displayName }));
-                        scanMutation.mutate(drive.scanPath);
-                      }}
-                      subtitle={drive.scanPath}
-                    />
-                  ))}
-                </>
-              ) : (
-                <div className="empty-note">{t("source.empty")}</div>
-              )}
-            </div>
-
-              {rootPath && !manualRootSet.has(rootPath) && !detectedRoots.some((drive) => drive.scanPath === rootPath) ? (
-                <div className="source-group">
-                  <div className="source-group-header">
-                    <span>{t("source.currentSource")}</span>
-                  </div>
-                  <SidebarItem
-                    active
-                    disabled={deleting}
-                    label={fileName(rootPath) || rootPath}
-                    onClick={() => queryClient.invalidateQueries({ queryKey: ["photo-groups"] })}
-                    subtitle={rootPath}
-                  />
-                </div>
-              ) : null}
-          </section>
-
-          <section className="sidebar-module scan-summary">
-            <div className="section-heading">
-              <span>{t("summary.scan")}</span>
-            </div>
-            <SummaryButton
-              active={groupKind === "all"}
-              icon={<Layers size={15} />}
-              label={t("common.groups")}
-              onClick={() => applyKindFilter("all")}
-              value={hasSource ? (currentSummary?.groups ?? visibleGroups.length) : 0}
-            />
-            <SummaryButton
-              active={groupKind === "paired"}
-              icon={<Link2 size={15} />}
-              label={t("filter.paired")}
-              onClick={() => applyKindFilter("paired")}
-              value={hasSource ? (currentSummary?.pairedGroups ?? 0) : 0}
-            />
-            <SummaryButton
-              active={groupKind === "rawOnly"}
-              icon={<FileText size={15} />}
-              label={t("filter.rawOnly")}
-              onClick={() => applyKindFilter("rawOnly")}
-              value={hasSource ? (currentSummary?.rawOnlyGroups ?? 0) : 0}
-            />
-            <SummaryButton
-              active={groupKind === "jpgOnly"}
-              icon={<Image size={15} />}
-              label={t("filter.jpgOnly")}
-              onClick={() => applyKindFilter("jpgOnly")}
-              value={hasSource ? (currentSummary?.jpgOnlyGroups ?? 0) : 0}
-            />
-          </section>
-        </aside>
-
-        <PhotoGrid
-          activeId={activeId}
-          emptyActionLabel={t("action.chooseFolder")}
-          emptyDescription={emptyState.description}
-          emptyTitle={emptyState.title}
-          galleryTitle={t("gallery.allItems")}
-          groups={visibleGroups}
-          hasMore={visibleHasMoreGroups}
-          isFetchingMore={groupsQuery.isFetchingNextPage}
-          loadingMoreLabel={t("gallery.loadingMore")}
-          minCardWidth={cardSize}
-          noPreviewLabel={t("empty.noPreview")}
-          onActivate={activateOrSelect}
-          onContextMenu={openPhotoContextMenu}
-          onEmptyAction={chooseFolder}
-          onLoadMore={loadMoreGroups}
-          onOpen={openPreview}
-          onToggle={toggleSelected}
-          photoGroupsLabel={t("gallery.photoGroups", { count: visibleGroupCount })}
-          scrollToContinueLabel={t("gallery.scrollToContinue")}
-          selected={selected}
-          totalGroups={visibleGroupCount}
+        <MainToolbar
+          deleting={deleting}
+          hasSource={hasSource}
+          inspectorCollapsed={inspectorCollapsed}
+          mediaKind={mediaKind}
+          query={query}
+          rootIsAvailable={rootIsAvailable}
+          scanning={scanning}
+          selectedCount={selected.size}
+          selectionMode={selectionMode}
+          t={t}
+          visibleGroupCount={visibleGroups.length}
+          onChooseFolder={chooseFolder}
+          onDeleteSelected={() => {
+            setClosingModal(null);
+            setDeleteOpen(true);
+          }}
+          onQueryChange={(value) => {
+            setQuery(value);
+            setActiveId("");
+            setSelected(new Set());
+          }}
+          onRescan={() => scan()}
+          onSelectAll={selectAllVisibleGroups}
+          onSwitchMediaKind={switchMediaKind}
+          onToggleInspector={toggleInspector}
+          onToggleSelectionMode={toggleSelectionMode}
         />
 
-        <aside className="inspector">
-          <div className="tabs">
-            <button
-              className={inspectorTab === "info" ? "active" : ""}
-              onClick={() => setInspectorTab("info")}
-            >
-              {t("common.info")}
-            </button>
-            <button
-              className={inspectorTab === "metadata" ? "active" : ""}
-              onClick={() => setInspectorTab("metadata")}
-              disabled={!activeId}
-            >
-              {t("common.metadata")}
-            </button>
-          </div>
-          {detailQuery.isFetching && !detailQuery.data ? (
-            <InspectorSkeleton />
-          ) : detailQuery.data && inspectorTab === "info" ? (
-            <>
-              <section>
-                <div className="section-heading">
-                  <span>{t("common.files")}</span>
-                  <span>{t("common.selected", { count: detailQuery.data.files.length })}</span>
-                </div>
-                <div className="file-list">
-                  {detailQuery.data.files.map((file) => (
-                    <button
-                      className="file-row"
-                      key={file.id}
-                      onClick={() => openFile(file.path)}
-                      title={file.path}
-                    >
-                      <strong>{file.fileName}</strong>
-                      <span>{file.kind.toUpperCase()}</span>
-                      <em>{formatBytes(file.size)}</em>
-                    </button>
-                  ))}
-                </div>
-              </section>
-              <section className="kv">
-                <SummaryRow
-                  label={t("common.captureTime")}
-                  value={
-                    metadataQuery.data?.captureTime ??
-                    detailQuery.data.captureTime ??
-                    (metadataQuery.isFetching ? t("metadata.reading") : t("metadata.unknown"))
-                  }
-                />
-                <SummaryRow
-                  label={t("common.camera")}
-                  value={
-                    metadataQuery.data?.cameraModel ??
-                    detailQuery.data.cameraModel ??
-                    (metadataQuery.isFetching ? t("metadata.reading") : t("metadata.unknown"))
-                  }
-                />
-                <SummaryRow
-                  label={t("common.lens")}
-                  value={
-                    metadataQuery.data?.lens ??
-                    detailQuery.data.lens ??
-                    (metadataQuery.isFetching ? t("metadata.reading") : t("metadata.unknown"))
-                  }
-                />
-                <SummaryRow label={t("common.folder")} value={detailQuery.data.folderName} />
-                <SummaryRow label={t("common.totalSize")} value={formatBytes(detailQuery.data.totalSize)} />
-              </section>
-              <section>
-                <div className="section-heading">
-                  <span>{t("common.path")}</span>
-                </div>
-                <div className="paths">
-                  {detailQuery.data.files.map((file) => (
-                    <p key={file.id}>{file.path}</p>
-                  ))}
-                </div>
-              </section>
-            </>
-          ) : detailQuery.data && inspectorTab === "metadata" ? (
-            <MetadataPanel
-              error={metadataQuery.data?.error}
-              isLoading={metadataQuery.isFetching}
+        <main
+          className={`workspace ${inspectorCollapsed ? "inspector-collapsed" : ""} ${
+            galleryLayoutTransitioning ? "gallery-layout-transitioning" : ""
+          }`}
+        >
+          <SourcePanel
+            currentSummary={currentSummary}
+            deleting={deleting}
+            detectedRoots={detectedRoots}
+            groupKind={groupKind}
+            hasSource={hasSource}
+            manualAvailability={manualAvailability}
+            manualRootSet={manualRootSet}
+            manualRoots={manualRoots}
+            mediaKind={mediaKind}
+            mediaTransitioning={mediaTransitioning}
+            rootPath={rootPath}
+            scanPending={scanMutation.isPending}
+            t={t}
+            visibleGroupCount={visibleGroups.length}
+            onAddFolder={chooseFolder}
+            onApplyKindFilter={applyKindFilter}
+            onClearManualRoot={clearManualRoot}
+            onRefreshRemovableRoots={refreshRemovableRoots}
+            onSelectCurrentSource={() =>
+              queryClient.invalidateQueries({ queryKey: ["photo-groups"] })
+            }
+            onSelectManualRoot={selectManualRoot}
+            onSelectRemovableRoot={(drive) => {
+              setRootPath(drive.scanPath);
+              if (scanMutation.isPending) {
+                setMessage(t("source.selectedManual", { name: drive.displayName }));
+                return;
+              }
+              setMessage(t("status.detectedIndexing", { name: drive.displayName }));
+              scanMutation.mutate(drive.scanPath);
+            }}
+          />
+
+          <PhotoGrid
+            activeId={activeId}
+            emptyActionLabel={t("action.chooseFolder")}
+            emptyDescription={emptyState.description}
+            emptyIcon={mediaKind === "videos" ? <Video size={38} /> : undefined}
+            emptyTitle={emptyState.title}
+            galleryTitle={mediaKind === "videos" ? t("media.videos") : t("gallery.allItems")}
+            groups={visibleGroups}
+            hasMore={visibleHasMoreGroups}
+            headerControls={
+              <GalleryControls
+                cardSize={cardSize}
+                hasSource={hasSource}
+                photoSort={photoSort}
+                t={t}
+                onCardSizeChange={updateCardSize}
+                onSortChange={(value) => {
+                  setPhotoSort(value);
+                  setActiveId("");
+                  setSelected(new Set());
+                }}
+              />
+            }
+            isFetchingMore={groupsQuery.isFetchingNextPage}
+            isMediaTransitioning={mediaTransitioning}
+            loadingMoreLabel={t("gallery.loadingMore")}
+            minCardWidth={cardSize}
+            noPreviewLabel={
+              mediaKind === "videos" ? t("empty.noVideoPreview") : t("empty.noPreview")
+            }
+            onActivate={activateOrSelect}
+            onContextMenu={openPhotoContextMenu}
+            onEmptyAction={chooseFolder}
+            onLoadMore={loadMoreGroups}
+            onOpen={mediaKind === "videos" ? openGroup : openPreview}
+            onToggle={toggleSelected}
+            photoGroupsLabel={t("gallery.photoGroups", { count: visibleGroupCount })}
+            scrollToContinueLabel={t("gallery.scrollToContinue")}
+            selected={selected}
+            totalGroups={visibleGroupCount}
+          />
+
+          {!inspectorCollapsed && (
+            <InspectorPanel
+              activeId={activeId}
+              detail={detailQuery.data}
+              detailFetching={detailQuery.isFetching}
+              inspectorTab={inspectorTab}
+              mediaKind={mediaKind}
+              mediaTransitioning={mediaTransitioning}
               metadata={metadataQuery.data}
+              metadataFetching={metadataQuery.isFetching}
+              onOpenFile={openFile}
+              onTabChange={setInspectorTab}
               t={t}
             />
-          ) : (
-            <div className="inspector-empty">
-              <Images size={42} />
-              <strong>{t("empty.inspectorTitle")}</strong>
-              <span>{t("empty.inspector")}</span>
-            </div>
           )}
-        </aside>
-      </main>
+        </main>
 
-      <footer className="statusbar">
-        <div className="status-message">
-          <CheckCircle2 size={16} />
-          <span>{statusMessage}</span>
-        </div>
-        <div className="status-actions">
-          <button
-            className="status-info"
-            aria-label={t("common.info")}
-            onClick={() => {
-              setClosingModal(null);
-              setAboutOpen(true);
-            }}
-          >
-            <Info size={15} />
-          </button>
-          <button
-            className="status-info"
-            aria-label={t("setting.open")}
-            onClick={() => {
-              setClosingModal(null);
-              setSettingsOpen(true);
-            }}
-          >
-            <Settings size={15} />
-          </button>
-        </div>
-      </footer>
+        <footer className="statusbar">
+          <div className="status-message">
+            <CheckCircle2 size={16} />
+            <span>{statusMessage}</span>
+          </div>
+          <div className="status-actions">
+            <button
+              className="status-info"
+              aria-label={t("common.info")}
+              onClick={() => {
+                setClosingModal(null);
+                setAboutOpen(true);
+              }}
+            >
+              <Info size={15} />
+            </button>
+            <button
+              className="status-info"
+              aria-label={t("setting.open")}
+              onClick={() => {
+                setClosingModal(null);
+                setSettingsOpen(true);
+              }}
+            >
+              <Settings size={15} />
+            </button>
+          </div>
+        </footer>
       </div>
 
       {contextMenu && (
@@ -1207,679 +1090,47 @@ export default function App() {
           group={contextMenu.group}
           onClose={closePhotoContextMenu}
           onDelete={() => deleteContextGroup(contextMenu.group)}
-          onOpen={() => openGroup(contextMenu.group.id, true)}
+          onOpen={() => openPreview(contextMenu.group.id, true)}
+          onOpenExternal={() => openGroup(contextMenu.group.id, true)}
           t={t}
           x={contextMenu.x}
           y={contextMenu.y}
         />
       )}
 
-      {aboutOpen && (
-        <AccessibleModal
-          className="about-modal"
-          closing={closingModal === "about"}
-          onClose={closeAbout}
-          title="Panasonic Pair Manager"
-        >
-            <header>
-              <Info size={20} />
-              <h2>Panasonic Pair Manager</h2>
-            </header>
-            <p>{t("about.description")}</p>
-            <div className="about-list">
-              <SummaryRow label="Stack" value={t("about.stack")} />
-              <SummaryRow label="Preview" value={t("about.preview")} />
-              <SummaryRow label="Delete" value={t("about.delete")} />
-              <SummaryRow label="Metadata" value={t("about.metadata")} />
-            </div>
-            <div className="modal-actions">
-              <Button onClick={closeAbout}>{t("action.close")}</Button>
-            </div>
-        </AccessibleModal>
-      )}
+      {aboutOpen && <AboutModal closing={closingModal === "about"} onClose={closeAbout} t={t} />}
 
       {settingsOpen && (
-        <AccessibleModal
-          className="settings-modal"
+        <SettingsModal
+          cacheStats={thumbnailCacheQuery.data}
+          clearingCache={clearThumbnailCacheMutation.isPending}
           closing={closingModal === "settings"}
+          language={language}
+          onClearCache={() => clearThumbnailCacheMutation.mutate()}
           onClose={closeSettings}
-          title={t("setting.title")}
-        >
-            <header>
-              <Settings size={20} />
-              <h2>{t("setting.title")}</h2>
-            </header>
-            <div className="settings-list">
-              <label className="setting-row">
-                <span>{t("setting.theme")}</span>
-                <Select
-                  className="setting-select"
-                  MenuProps={{
-                    classes: { paper: "setting-select-menu" },
-                    disablePortal: true,
-                  }}
-                  size="small"
-                  value={theme}
-                  onChange={(event) => setTheme(normalizeTheme(event.target.value))}
-                >
-                  {THEME_OPTIONS.map((option) => (
-                    <MenuItem key={option.code} value={option.code}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </label>
-              <label className="setting-row">
-                <span>{t("setting.language")}</span>
-                <Select
-                  className="setting-select"
-                  MenuProps={{
-                    classes: { paper: "setting-select-menu" },
-                    disablePortal: true,
-                  }}
-                  size="small"
-                  value={language}
-                  onChange={(event) => setLanguage(normalizeLanguage(event.target.value))}
-                >
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <MenuItem key={option.code} value={option.code}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </label>
-              <div className="setting-row">
-                <span>{t("setting.thumbnailCache")}</span>
-                <div className="setting-inline">
-                  <strong>
-                    {formatBytes(thumbnailCacheQuery.data?.bytes ?? 0)}
-                    {" / "}
-                    {t("setting.cacheFiles", { count: thumbnailCacheQuery.data?.files ?? 0 })}
-                  </strong>
-                  <Button
-                    disabled={clearThumbnailCacheMutation.isPending}
-                    onClick={() => clearThumbnailCacheMutation.mutate()}
-                  >
-                    {t("setting.clearCache")}
-                  </Button>
-                </div>
-              </div>
-            </div>
-            <div className="modal-actions">
-              <Button onClick={closeSettings}>{t("action.close")}</Button>
-            </div>
-        </AccessibleModal>
+          onLanguageChange={setLanguage}
+          onThemeChange={setTheme}
+          t={t}
+          theme={theme}
+        />
       )}
 
       {deleteOpen && (
-        <AccessibleModal
-          closeOnBackdrop={false}
+        <DeleteModal
+          deleting={deleting}
+          detailLoading={deleteDetailLoading}
+          files={deleteFiles}
           closing={closingModal === "delete"}
           onClose={closeDelete}
-          title={t("delete.title")}
-        >
-            <header>
-              <Trash2 size={20} />
-              <h2>{t("delete.title")}</h2>
-            </header>
-            <p>{t("delete.confirmDescription")}</p>
-            <div className="delete-stats">
-              <SummaryRow label={t("common.groups")} value={deletePlan.groups} />
-              <SummaryRow label={t("common.files")} value={deletePlan.files} />
-              <SummaryRow label={t("delete.rawFiles")} value={deletePlan.rawFiles} />
-              <SummaryRow label={t("delete.jpgFiles")} value={deletePlan.jpgFiles} />
-              <SummaryRow label={t("delete.sidecarFiles")} value={deletePlan.sidecarFiles} />
-              <SummaryRow label={t("common.totalSize")} value={formatBytes(deletePlan.totalSize)} />
-            </div>
-            <div className="delete-file-preview">
-              <div className="section-heading">
-                <span>{t("delete.filePreview")}</span>
-                {deleteDetailLoading ? <span>{t("delete.loadingFiles")}</span> : null}
-              </div>
-              {deleteFiles.length ? (
-                <div className="delete-file-list">
-                  {deleteFiles.slice(0, DELETE_FILE_PREVIEW_LIMIT).map((file) => (
-                    <div className="delete-file-row" key={file.id} title={file.path}>
-                      <strong>{file.fileName}</strong>
-                      <span>{file.kind.toUpperCase()}</span>
-                      <em>{formatBytes(file.size)}</em>
-                    </div>
-                  ))}
-                  {deleteFiles.length > DELETE_FILE_PREVIEW_LIMIT ? (
-                    <div className="delete-file-more">
-                      {t("delete.moreFiles", { count: deleteFiles.length - DELETE_FILE_PREVIEW_LIMIT })}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="empty-note compact">
-                  {deleteDetailLoading ? t("delete.loadingFiles") : t("delete.noFiles")}
-                </div>
-              )}
-            </div>
-            <label className="recycle-check">
-              <input type="checkbox" checked readOnly />
-              {t("delete.moveToRecycle")}
-            </label>
-            <div className="modal-actions">
-              <Button
-                disabled={deleting || !deleteFiles.length}
-                onClick={() => {
-                  const firstFile = deleteFiles[0];
-                  if (firstFile) openFile(dirName(firstFile.path));
-                }}
-              >
-                {t("delete.openContainingFolder")}
-              </Button>
-              <Button disabled={deleting} onClick={confirmDelete} variant="solidDanger">
-                {t("action.delete")}
-              </Button>
-              <Button disabled={deleting} onClick={closeDelete}>
-                {t("action.cancel")}
-              </Button>
-            </div>
-        </AccessibleModal>
-      )}
-    </div>
-  );
-}
-
-function AccessibleModal({
-  children,
-  className = "",
-  closing = false,
-  closeOnBackdrop = true,
-  onClose,
-  title,
-}: {
-  children: ReactNode;
-  className?: string;
-  closing?: boolean;
-  closeOnBackdrop?: boolean;
-  onClose: () => void;
-  title: string;
-}) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    const focusable = getFocusableElements(dialogRef.current);
-    (focusable[0] ?? dialogRef.current)?.focus();
-    return () => previouslyFocused?.focus();
-  }, []);
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      onClose();
-      return;
-    }
-
-    if (event.key !== "Tab") return;
-
-    const focusable = getFocusableElements(dialogRef.current);
-    if (!focusable.length) {
-      event.preventDefault();
-      dialogRef.current?.focus();
-      return;
-    }
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    const activeElement = document.activeElement;
-
-    if (event.shiftKey && activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
-  return (
-    <div
-      className={`modal-backdrop ${closing ? "closing" : ""}`}
-      role="presentation"
-      onMouseDown={(event) => {
-        if (closeOnBackdrop && event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        className={`modal ${closing ? "closing" : ""} ${className}`}
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-        onKeyDown={handleKeyDown}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function PreviewWindow() {
-  const queryClient = useQueryClient();
-  const [language] = useState<LanguageCode>(() =>
-    normalizeLanguage(window.localStorage.getItem("ppm.language")),
-  );
-  const [theme] = useState<ThemeCode>(() =>
-    normalizeTheme(window.localStorage.getItem("ppm.theme")),
-  );
-  const t = useMemo(() => makeTranslator(language), [language]);
-  const currentWindow = useMemo(() => getCurrentWebviewWindow(), []);
-  const [previewState, setPreviewState] = useState<PreviewWindowState>(loadPreviewWindowState);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const currentId = previewState.id;
-  const currentIndex = currentId ? previewState.ids.indexOf(currentId) : -1;
-  const canNavigate = previewState.ids.length > 1 && currentIndex >= 0;
-  const detailQuery = useQuery({
-    enabled: Boolean(currentId),
-    queryFn: () => getPhotoGroup(currentId),
-    queryKey: ["photo-group-detail", currentId],
-  });
-  const group = detailQuery.data;
-  const jpgFile = group?.files.find((file) => file.kind === "jpg");
-  const previewQuery = useQuery({
-    enabled: Boolean(currentId && !jpgFile),
-    queryFn: () => getPhotoThumbnail(currentId, 2400),
-    queryKey: ["photo-thumbnail", currentId, 2400],
-    staleTime: Infinity,
-  });
-  const previewPath = jpgFile?.path ?? previewQuery.data;
-
-  const setCurrentId = useCallback((id: string) => {
-    setPreviewState((current) => {
-      const next = { ...current, id };
-      window.localStorage.setItem(PREVIEW_WINDOW_STORAGE_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
-
-  const movePreview = useCallback(
-    (direction: -1 | 1) => {
-      if (!canNavigate) return;
-      const nextIndex = (currentIndex + direction + previewState.ids.length) % previewState.ids.length;
-      setCurrentId(previewState.ids[nextIndex]);
-    },
-    [canNavigate, currentIndex, previewState.ids, setCurrentId],
-  );
-
-  const closeWindow = useCallback(() => {
-    currentWindow.close();
-  }, [currentWindow]);
-
-  const minimizeWindow = useCallback(() => {
-    currentWindow.minimize();
-  }, [currentWindow]);
-
-  const toggleMaximizeWindow = useCallback(() => {
-    currentWindow.toggleMaximize();
-  }, [currentWindow]);
-
-  const dragWindow = useCallback(() => {
-    currentWindow.startDragging();
-  }, [currentWindow]);
-
-  const openExternal = useCallback(async () => {
-    if (!currentId) return;
-    await openPhotoGroup(currentId);
-  }, [currentId]);
-
-  useEffect(() => {
-    setLoaded(false);
-  }, [previewPath]);
-
-  useEffect(() => {
-    dialogRef.current?.focus();
-  }, [currentId]);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen<PreviewWindowState>("preview-window-state", (event) => {
-      setPreviewState(event.payload);
-    }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
-    });
-    return () => unlisten?.();
-  }, []);
-
-  useEffect(() => {
-    if (group?.stem) {
-      currentWindow.setTitle(`${group.stem} - Panasonic Pair Manager`);
-    }
-  }, [currentWindow, group?.stem]);
-
-  useEffect(() => {
-    if (!canNavigate) return;
-    const adjacent = [
-      previewState.ids[(currentIndex - 1 + previewState.ids.length) % previewState.ids.length],
-      previewState.ids[(currentIndex + 1) % previewState.ids.length],
-    ];
-    adjacent.forEach((id) => {
-      queryClient.prefetchQuery({
-        queryFn: () => getPhotoGroup(id),
-        queryKey: ["photo-group-detail", id],
-      });
-    });
-  }, [canNavigate, currentIndex, previewState.ids, queryClient]);
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeWindow();
-      return;
-    }
-    if (event.key === "ArrowLeft" && canNavigate) {
-      event.preventDefault();
-      movePreview(-1);
-      return;
-    }
-    if (event.key === "ArrowRight" && canNavigate) {
-      event.preventDefault();
-      movePreview(1);
-    }
-  };
-
-  return (
-    <div
-      className="preview-window-root"
-    >
-      <div
-        aria-label={t("preview.title")}
-        aria-modal="true"
-        className="preview-dialog preview-window-dialog"
-        onKeyDown={handleKeyDown}
-        ref={dialogRef}
-        role="dialog"
-        tabIndex={-1}
-      >
-        <header className="preview-toolbar" onMouseDown={dragWindow}>
-          <div className="preview-title" title={group?.stem ?? ""}>
-            <strong>{group?.stem ?? t("preview.title")}</strong>
-            <span>
-              {group ? `${group.folderName} · ${formatBytes(group.totalSize)}` : t("preview.loading")}
-            </span>
-          </div>
-          <div className="preview-actions">
-            <Button disabled={!currentId} onClick={openExternal}>
-              <ExternalLink size={15} />
-              {t("preview.openExternal")}
-            </Button>
-            <div className="preview-window-controls" onMouseDown={(event) => event.stopPropagation()}>
-              <button aria-label="Minimize" onClick={minimizeWindow} type="button">
-                <span />
-              </button>
-              <button aria-label="Maximize" onClick={toggleMaximizeWindow} type="button">
-                <span />
-              </button>
-              <button aria-label={t("action.close")} className="close" onClick={closeWindow} type="button">
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <div className="preview-stage">
-          {canNavigate ? (
-            <button
-              aria-label={t("preview.previous")}
-              className="preview-nav previous"
-              onClick={() => movePreview(-1)}
-              type="button"
-            >
-              <ChevronLeft size={28} />
-            </button>
-          ) : null}
-
-          <div className="preview-image-frame">
-            {previewPath ? (
-              <img
-                className={loaded ? "loaded" : ""}
-                src={convertFileSrc(previewPath)}
-                alt=""
-                decoding="async"
-                onLoad={() => setLoaded(true)}
-              />
-            ) : detailQuery.isFetching || previewQuery.isFetching ? (
-              <div className="preview-loading">
-                <span />
-                {t("preview.loading")}
-              </div>
-            ) : (
-              <div className="preview-empty">
-                <Image size={42} />
-                <strong>{t("preview.unavailable")}</strong>
-                <span>{t("preview.unavailableDescription")}</span>
-              </div>
-            )}
-          </div>
-
-          {canNavigate ? (
-            <button
-              aria-label={t("preview.next")}
-              className="preview-nav next"
-              onClick={() => movePreview(1)}
-              type="button"
-            >
-              <ChevronRight size={28} />
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PhotoContextMenu({
-  deleteDisabled,
-  group,
-  onClose,
-  onDelete,
-  onOpen,
-  t,
-  x,
-  y,
-}: {
-  deleteDisabled: boolean;
-  group: PhotoGroup;
-  onClose: () => void;
-  onDelete: () => void;
-  onOpen: () => void;
-  t: ReturnType<typeof makeTranslator>;
-  x: number;
-  y: number;
-}) {
-  useEffect(() => {
-    const close = () => onClose();
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
-    window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("contextmenu", close);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose]);
-
-  const left = Math.min(x, Math.max(12, window.innerWidth - 190));
-  const top = Math.min(y, Math.max(12, window.innerHeight - 120));
-
-  return (
-    <div
-      className="photo-context-menu"
-      role="menu"
-      style={{ left, top }}
-      onClick={(event) => event.stopPropagation()}
-      onContextMenu={(event) => event.preventDefault()}
-    >
-      <div className="context-menu-title" title={group.stem}>
-        {group.stem}
-      </div>
-      <button
-        className="context-menu-item"
-        onClick={() => {
-          onOpen();
-          onClose();
-        }}
-        role="menuitem"
-        type="button"
-      >
-        <ExternalLink size={15} />
-        {t("action.open")}
-      </button>
-      <button
-        className="context-menu-item danger"
-        disabled={deleteDisabled}
-        onClick={() => {
-          onDelete();
-          onClose();
-        }}
-        role="menuitem"
-        type="button"
-      >
-        <Trash2 size={15} />
-        {t("action.delete")}
-      </button>
-    </div>
-  );
-}
-
-function getFocusableElements(container: HTMLElement | null) {
-  if (!container) return [];
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ),
-  ).filter((element) => !element.hasAttribute("hidden") && element.offsetParent !== null);
-}
-
-function MetadataPanel({
-  error,
-  isLoading,
-  metadata,
-  t,
-}: {
-  error?: string;
-  isLoading: boolean;
-  metadata?: {
-    available: boolean;
-    sourcePath?: string;
-    captureTime?: string;
-    cameraModel?: string;
-    lens?: string;
-    width?: number;
-    height?: number;
-    items: { tag: string; value: string }[];
-  };
-  t: ReturnType<typeof makeTranslator>;
-}) {
-  if (isLoading && !metadata) {
-    return <MetadataSkeleton />;
-  }
-
-  if (error && !metadata?.available) {
-    return (
-      <section>
-        <div className="section-heading">
-          <span>{t("common.metadata")}</span>
-        </div>
-        <div className="metadata-error">
-          <strong>{t("metadata.errorTitle")}</strong>
-          <p>{error}</p>
-          <span>{t("metadata.errorDetail")}</span>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <>
-      <section className="kv">
-        <SummaryRow label={t("common.captureTime")} value={metadata?.captureTime ?? t("metadata.unknown")} />
-        <SummaryRow label={t("common.camera")} value={metadata?.cameraModel ?? t("metadata.unknown")} />
-        <SummaryRow label={t("common.lens")} value={metadata?.lens ?? t("metadata.unknown")} />
-        <SummaryRow
-          label={t("common.dimensions")}
-          value={
-            metadata?.width && metadata.height
-              ? `${metadata.width} x ${metadata.height}`
-              : t("metadata.unknown")
-          }
+          onConfirm={confirmDelete}
+          onOpenContainingFolder={() => {
+            const firstFile = deleteFiles[0];
+            if (firstFile) openFile(dirName(firstFile.path));
+          }}
+          plan={deletePlan}
+          t={t}
         />
-      </section>
-      <section>
-        <div className="section-heading">
-          <span>{t("metadata.source")}</span>
-        </div>
-        <div className="paths">
-          <p>{metadata?.sourcePath ?? t("metadata.sourceEmpty")}</p>
-        </div>
-      </section>
-      <section>
-        <div className="section-heading">
-          <span>{t("metadata.all")}</span>
-          <span>{t("metadata.fields", { count: metadata?.items.length ?? 0 })}</span>
-        </div>
-        {metadata?.items.length ? (
-          <div className="metadata-list">
-            {metadata.items.map((item) => (
-              <div className="metadata-row" key={`${item.tag}-${item.value}`}>
-                <span>{item.tag}</span>
-                <strong>{item.value}</strong>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-note">{t("empty.noExif")}</div>
-        )}
-      </section>
-    </>
-  );
-}
-
-function InspectorSkeleton() {
-  return (
-    <div className="inspector-skeleton" aria-live="polite">
-      <div className="skeleton-block skeleton-title" />
-      <div className="skeleton-card" />
-      <div className="skeleton-card" />
-      <div className="skeleton-lines">
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
-    </div>
-  );
-}
-
-function MetadataSkeleton() {
-  return (
-    <div className="inspector-skeleton" aria-live="polite">
-      <div className="skeleton-block skeleton-title" />
-      <div className="skeleton-lines">
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
+      )}
     </div>
   );
 }

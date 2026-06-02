@@ -1,0 +1,32 @@
+import { en } from "./en";
+import type { TranslationMap } from "../i18n";
+
+export const ko: TranslationMap = {
+  ...en,
+  "action.cancel": "취소",
+  "action.chooseFolder": "폴더 선택",
+  "action.close": "닫기",
+  "action.delete": "삭제",
+  "action.deleteSelected": "선택 삭제",
+  "action.multiSelect": "다중 선택",
+  "action.open": "열기",
+  "action.rescan": "다시 스캔",
+  "common.camera": "카메라",
+  "common.captureTime": "촬영 시간",
+  "common.files": "파일",
+  "common.folder": "폴더",
+  "common.groups": "그룹",
+  "common.info": "정보",
+  "common.metadata": "메타데이터",
+  "common.selected": "{count}개 선택됨",
+  "common.totalSize": "전체 크기",
+  "empty.noPreview": "JPG 미리보기 없음",
+  "gallery.allItems": "전체 항목",
+  "gallery.photoGroups": "사진 그룹 {count}개",
+  "setting.language": "언어",
+  "setting.open": "설정",
+  "setting.theme": "테마",
+  "setting.title": "설정",
+  "source.autoDetect": "앨범 폴더",
+  "status.ready": "준비됨.",
+};

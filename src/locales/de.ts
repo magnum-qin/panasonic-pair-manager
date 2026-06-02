@@ -1,0 +1,31 @@
+import { en } from "./en";
+import type { TranslationMap } from "../i18n";
+
+export const de: TranslationMap = {
+  ...en,
+  "action.cancel": "Abbrechen",
+  "action.chooseFolder": "Ordner wahlen",
+  "action.close": "Schliessen",
+  "action.delete": "Loschen",
+  "action.deleteSelected": "Auswahl loschen",
+  "action.multiSelect": "Mehrfachauswahl",
+  "action.open": "Offnen",
+  "action.rescan": "Neu scannen",
+  "common.camera": "Kamera",
+  "common.captureTime": "Aufnahmezeit",
+  "common.files": "Dateien",
+  "common.folder": "Ordner",
+  "common.groups": "Gruppen",
+  "common.info": "Info",
+  "common.metadata": "Metadaten",
+  "common.selected": "{count} ausgewahlt",
+  "empty.noPreview": "Keine JPG-Vorschau",
+  "gallery.allItems": "Alle Elemente",
+  "gallery.photoGroups": "{count} Fotogruppen",
+  "setting.language": "Sprache",
+  "setting.open": "Einstellungen",
+  "setting.theme": "Design",
+  "setting.title": "Einstellungen",
+  "source.autoDetect": "Albumordner",
+  "status.ready": "Bereit.",
+};
