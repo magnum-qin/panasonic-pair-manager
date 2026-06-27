@@ -1,31 +1,14 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ImageOff } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { useElementWidth } from "../hooks/useElementWidth";
 import type { PhotoGroup } from "../types";
 import { formatBytes } from "../utils";
 import { PhotoCard } from "./PhotoCard";
+import { PhotoGridEmptyState } from "./PhotoGridEmptyState";
 
 const GRID_GAP = 14;
 const GRID_PADDING = 18;
 const THUMBNAIL_SIZE_STEP = 80;
-
-function useElementWidth<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null);
-  const [width, setWidth] = useState(0);
-
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      setWidth(entry.contentRect.width);
-    });
-    observer.observe(element);
-    setWidth(element.getBoundingClientRect().width);
-    return () => observer.disconnect();
-  }, []);
-
-  return [ref, width] as const;
-}
 
 export function PhotoGrid({
   activeId,
@@ -129,16 +112,13 @@ export function PhotoGrid({
         ref={scrollRef}
       >
         {!groups.length && !totalGroupCount ? (
-          <div className="grid">
-            <div className="gallery-empty action-empty">
-              {emptyIcon ?? <ImageOff size={38} />}
-              <strong>{emptyTitle}</strong>
-              <span>{emptyDescription}</span>
-              {emptyActionLabel && onEmptyAction ? (
-                <button onClick={onEmptyAction}>{emptyActionLabel}</button>
-              ) : null}
-            </div>
-          </div>
+          <PhotoGridEmptyState
+            actionLabel={emptyActionLabel}
+            description={emptyDescription}
+            icon={emptyIcon}
+            onAction={onEmptyAction}
+            title={emptyTitle}
+          />
         ) : (
           <div className="virtual-grid" style={{ height: virtualizer.getTotalSize() }}>
             {virtualRows.map((virtualRow) => {
