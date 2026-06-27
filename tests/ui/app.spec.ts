@@ -93,7 +93,9 @@ test.beforeEach(async ({ page }) => {
             case "has_scan_for_root":
               return true;
             case "get_thumbnail_cache_stats":
-              return { files: 0, bytes: 0 };
+              return { files: 0, bytes: 0, limitBytes: 536_870_912 };
+            case "get_external_tool_status":
+              return { exiftoolAvailable: true, ffmpegAvailable: true };
             case "get_scan_summary":
               return {
                 rootPath,
@@ -206,4 +208,5 @@ test("switching to videos clears photo results and updates the inspector languag
   await expect(page.getByRole("button", { name: /^P1034304,/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^P1034305,/ })).toHaveCount(0);
   await expect(page.getByText("VIDEO").first()).toBeVisible();
+  await expect(page.locator(".photo-card video")).toHaveCount(0);
 });
