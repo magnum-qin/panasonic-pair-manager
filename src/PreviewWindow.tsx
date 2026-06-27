@@ -1,23 +1,19 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { getPhotoGroup, getPhotoThumbnail, openPhotoFile } from "./api";
+import { openPhotoFile } from "./api";
 import { PreviewStage } from "./features/preview/PreviewStage";
 import { PreviewToolbar } from "./features/preview/PreviewToolbar";
 import {
   PREVIEW_WINDOW_STORAGE_KEY,
   type PreviewWindowState,
 } from "./features/preview/preview-types";
+import { usePreviewData } from "./features/preview/usePreviewData";
 import { usePreviewGestures } from "./features/preview/usePreviewGestures";
 import { usePreviewNavigation } from "./features/preview/usePreviewNavigation";
 import { normalizeLanguage, translate, type LanguageCode, type TranslationKey } from "./i18n";
 import { normalizeTheme, type ThemeCode } from "./theme-options";
-
-function groupPreviewPath(group: Awaited<ReturnType<typeof getPhotoGroup>> | undefined) {
-  return group?.files.find((file) => file.kind === "jpg")?.path ?? "";
-}
 
 function makeTranslator(language: LanguageCode) {
   return (key: TranslationKey, values?: Record<string, string | number>) =>
@@ -57,22 +53,13 @@ export default function PreviewWindow() {
     previewState,
     setPreviewState,
   });
-  const detailQuery = useQuery({
-    enabled: Boolean(currentId),
-    queryFn: () => getPhotoGroup(currentId),
-    queryKey: ["photo-group-detail", currentId],
+  const { detailQuery, externalPath, group, previewPath, previewQuery } = usePreviewData({
+    canNavigate,
+    currentId,
+    currentIndex,
+    ids: previewState.ids,
+    queryClient,
   });
-  const group = detailQuery.data;
-  const jpgFile = group?.files.find((file) => file.kind === "jpg");
-  const rawFile = group?.files.find((file) => file.kind === "raw");
-  const previewQuery = useQuery({
-    enabled: Boolean(currentId && !jpgFile),
-    queryFn: () => getPhotoThumbnail(currentId, 2400),
-    queryKey: ["photo-thumbnail", currentId, 2400],
-    staleTime: Infinity,
-  });
-  const previewPath = jpgFile?.path ?? previewQuery.data;
-  const externalPath = jpgFile?.path ?? rawFile?.path ?? previewPath ?? "";
   const {
     handlePointerDown,
     handlePointerEnd,
@@ -118,35 +105,6 @@ export default function PreviewWindow() {
     });
     return () => unlisten?.();
   }, []);
-
-  useEffect(() => {
-    if (!canNavigate) return;
-    const adjacent = [
-      previewState.ids[(currentIndex - 1 + previewState.ids.length) % previewState.ids.length],
-      previewState.ids[(currentIndex + 1) % previewState.ids.length],
-    ];
-    adjacent.forEach((id) => {
-      queryClient.prefetchQuery({
-        queryFn: async () => {
-          const nextGroup = await getPhotoGroup(id);
-          const nextPreviewPath = groupPreviewPath(nextGroup);
-          if (nextPreviewPath) {
-            const image = new window.Image();
-            image.decoding = "async";
-            image.src = convertFileSrc(nextPreviewPath);
-          } else {
-            queryClient.prefetchQuery({
-              queryFn: () => getPhotoThumbnail(id, 2400),
-              queryKey: ["photo-thumbnail", id, 2400],
-              staleTime: Infinity,
-            });
-          }
-          return nextGroup;
-        },
-        queryKey: ["photo-group-detail", id],
-      });
-    });
-  }, [canNavigate, currentIndex, previewState.ids, queryClient]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
