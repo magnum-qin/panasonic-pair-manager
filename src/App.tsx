@@ -1,15 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Info, Settings, Video } from "lucide-react";
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  lazy,
-  useMemo,
-  useRef,
-  useState,
-  Suspense,
-} from "react";
+import { useCallback, useDeferredValue, useEffect, lazy, useRef, useState, Suspense } from "react";
 import { clearThumbnailCache, deletePhotoGroups, openPhotoFile, openPhotoGroup } from "./api";
 import { PhotoGrid } from "./components/PhotoGrid";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
@@ -25,6 +16,7 @@ import { useMediaLibrary } from "./hooks/useMediaLibrary";
 import { useAppPreferences } from "./hooks/useAppPreferences";
 import { useDeleteWorkflow } from "./hooks/useDeleteWorkflow";
 import { useGalleryLayoutTransition } from "./hooks/useGalleryLayoutTransition";
+import { useGalleryEmptyState } from "./hooks/useGalleryEmptyState";
 import { useMediaMode } from "./hooks/useMediaMode";
 import { useModalLifecycle } from "./hooks/useModalLifecycle";
 import { useScanWorkflow } from "./hooks/useScanWorkflow";
@@ -222,58 +214,19 @@ export default function App() {
   const sourceWasScanned =
     rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
   const statusMessage = scanProgressText || message;
-  const emptyState = useMemo(() => {
-    if (hasSource && !rootIsAvailable) {
-      return {
-        title: t("empty.sourceOfflineTitle"),
-        description: activeSourceIsManual
-          ? t("empty.fixedOfflineDescription")
-          : t("empty.removableOfflineDescription"),
-      };
-    }
-    if (scanning && rootPath) {
-      return {
-        title: t("empty.scanningTitle", { name: sourceName || rootPath }),
-        description: scanProgressText || t("empty.scanningDescription"),
-      };
-    }
-    if (hasSource && !sourceWasScanned) {
-      return {
-        title: t("empty.unscannedTitle"),
-        description: activeSourceIsRemovable
-          ? t("empty.unscannedRemovableDescription")
-          : t("empty.unscannedDescription"),
-      };
-    }
-    if (hasSource && sourceWasScanned) {
-      return {
-        title: mediaKind === "videos" ? t("empty.noVideos") : t("empty.noGroups"),
-        description:
-          mediaKind === "videos"
-            ? t("empty.noVideosInSource")
-            : activeSourceIsRemovable
-              ? t("empty.noGroupsInRemovable")
-              : t("empty.noGroupsInSource"),
-      };
-    }
-    return {
-      title: t("empty.waiting"),
-      description: t("empty.waitingDescription"),
-    };
-  }, [
+  const emptyState = useGalleryEmptyState({
     activeSourceIsManual,
     activeSourceIsRemovable,
     hasSource,
     mediaKind,
     rootIsAvailable,
     rootPath,
-    rootScanQuery.data,
     scanProgressText,
     scanning,
     sourceName,
     sourceWasScanned,
     t,
-  ]);
+  });
   const { deleteDetailLoading, deleteFiles, deletePlan } = useDeleteWorkflow({
     deleteOpen,
     selectedGroups,
