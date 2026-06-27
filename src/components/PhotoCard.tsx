@@ -1,12 +1,9 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useQuery } from "@tanstack/react-query";
 import { Check, ImageOff, Video } from "lucide-react";
-import { memo, useEffect, useState, type MouseEvent } from "react";
-import { getPhotoThumbnail, getVideoThumbnail } from "../api";
+import { memo, useState, type MouseEvent } from "react";
+import { usePhotoCardThumbnail } from "../hooks/usePhotoCardThumbnail";
 import type { PhotoGroup } from "../types";
 import { formatBytes } from "../utils";
-
-const loadedThumbnailPaths = new Set<string>();
 
 export const PhotoCard = memo(function PhotoCard({
   group,
@@ -29,32 +26,17 @@ export const PhotoCard = memo(function PhotoCard({
   onOpen: (id: string) => void;
   onToggle: (id: string) => void;
 }) {
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [videoLoaded, setVideoLoaded] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
-  const isVideo = group.videoCount > 0 && group.rawCount === 0 && group.jpgCount === 0;
-  const videoPreviewPath = isVideo ? group.previewPath : undefined;
-  const thumbnailQuery = useQuery({
-    enabled: !isVideo && (group.jpgCount > 0 || group.rawCount > 0),
-    queryFn: () => getPhotoThumbnail(group.id, thumbnailSize),
-    queryKey: ["photo-thumbnail", group.id, thumbnailSize],
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  const videoThumbnailQuery = useQuery({
-    enabled: isVideo,
-    queryFn: () => getVideoThumbnail(group.id, thumbnailSize),
-    queryKey: ["video-thumbnail", group.id, thumbnailSize],
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  const thumbnailPath = thumbnailQuery.data ?? videoThumbnailQuery.data;
-
-  useEffect(() => {
-    setImageLoaded(Boolean(thumbnailPath && loadedThumbnailPaths.has(thumbnailPath)));
-  }, [thumbnailPath]);
-
-  useEffect(() => {
-    setVideoLoaded(false);
-  }, [videoPreviewPath]);
+  const {
+    imageLoaded,
+    isFetching,
+    isVideo,
+    markImageLoaded,
+    setVideoLoaded,
+    thumbnailPath,
+    videoLoaded,
+    videoPreviewPath,
+  } = usePhotoCardThumbnail(group, thumbnailSize);
 
   const handlePrimaryAction = (range?: boolean) => {
     onActivate(group.id, range);
@@ -116,13 +98,9 @@ export const PhotoCard = memo(function PhotoCard({
               loading="lazy"
               decoding="async"
               fetchPriority="low"
-              onLoad={() => {
-                loadedThumbnailPaths.add(thumbnailPath);
-                setImageLoaded(true);
-              }}
+              onLoad={markImageLoaded}
             />
-          ) : ((group.previewPath || group.rawCount > 0) && thumbnailQuery.isFetching) ||
-            videoThumbnailQuery.isFetching ? (
+          ) : isFetching ? (
             <div className="thumb-pending" aria-label="Loading thumbnail" />
           ) : videoPreviewPath ? (
             <video
