@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Info, Settings, Video } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, lazy, useRef, useState, Suspense } from "react";
-import { clearThumbnailCache, deletePhotoGroups, openPhotoFile, openPhotoGroup } from "./api";
+import { clearThumbnailCache, deletePhotoGroups } from "./api";
 import { PhotoGrid } from "./components/PhotoGrid";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
 import { activeMemoryKey, dirName, isPreviewWindowRoute } from "./features/app/app-utils";
@@ -19,10 +19,10 @@ import { useGalleryLayoutTransition } from "./hooks/useGalleryLayoutTransition";
 import { useGalleryEmptyState } from "./hooks/useGalleryEmptyState";
 import { useMediaMode } from "./hooks/useMediaMode";
 import { useModalLifecycle } from "./hooks/useModalLifecycle";
+import { usePhotoActions } from "./hooks/usePhotoActions";
 import { useScanWorkflow } from "./hooks/useScanWorkflow";
 import { useSourceLifecycle } from "./hooks/useSourceLifecycle";
-import type { GroupKindFilter, MediaKindFilter, PhotoGroup, ScanSummary } from "./types";
-import { fileName } from "./utils";
+import type { GroupKindFilter, MediaKindFilter, ScanSummary } from "./types";
 
 const PreviewWindow = lazy(() => import("./PreviewWindow"));
 
@@ -76,11 +76,6 @@ export default function App() {
     setGroupKind,
     switchMediaKind: transitionMediaKind,
   } = useMediaMode();
-  const [contextMenu, setContextMenu] = useState<{
-    group: PhotoGroup;
-    x: number;
-    y: number;
-  } | null>(null);
   const deferredQuery = useDeferredValue(query);
   const activeByRootRef = useRef<Record<string, string>>({});
 
@@ -253,28 +248,27 @@ export default function App() {
     [clearSelection, transitionMediaKind],
   );
 
-  const openPhotoContextMenu = useCallback((group: PhotoGroup, x: number, y: number) => {
-    setContextMenu({ group, x, y });
-  }, []);
-
-  const closePhotoContextMenu = useCallback(() => {
-    setContextMenu(null);
-  }, []);
-
-  const deleteContextGroup = useCallback(
-    (group: PhotoGroup) => {
-      setSelected(new Set([group.id]));
-      setSelectionMode(true);
-      openDelete();
-      setContextMenu(null);
-    },
-    [openDelete, setSelected, setSelectionMode],
-  );
-
   const confirmDelete = useCallback(() => {
     if (!selected.size) return;
     deleteMutation.mutate([...selected]);
   }, [deleteMutation, selected]);
+
+  const {
+    closePhotoContextMenu,
+    contextMenu,
+    deleteContextGroup,
+    openFile,
+    openGroup,
+    openPhotoContextMenu,
+  } = usePhotoActions({
+    onOpenDelete: openDelete,
+    rememberActiveGroup,
+    selectionModeRef,
+    setMessage,
+    setSelected,
+    setSelectionMode,
+    t,
+  });
 
   const openPreview = usePreviewWindow({
     onActivate: rememberActiveGroup,
@@ -285,35 +279,6 @@ export default function App() {
     theme,
     visibleGroups,
   });
-
-  const openGroup = useCallback(
-    async (id: string, force = false) => {
-      if (selectionModeRef.current && !force) return;
-      setContextMenu(null);
-      rememberActiveGroup(id);
-      setMessage(t("status.opening"));
-      try {
-        const path = await openPhotoGroup(id);
-        setMessage(t("status.opened", { name: fileName(path) }));
-      } catch (error) {
-        setMessage(String(error));
-      }
-    },
-    [rememberActiveGroup, t],
-  );
-
-  const openFile = useCallback(
-    async (path: string) => {
-      setMessage(t("status.opening"));
-      try {
-        const openedPath = await openPhotoFile(path);
-        setMessage(t("status.opened", { name: fileName(openedPath) }));
-      } catch (error) {
-        setMessage(String(error));
-      }
-    },
-    [t],
-  );
 
   const loadMoreGroups = useCallback(() => {
     if (groupsQuery.hasNextPage && !groupsQuery.isFetchingNextPage) {
