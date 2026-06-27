@@ -1,19 +1,10 @@
-import {
-  CheckSquare,
-  FolderPlus,
-  Image,
-  PanelRightClose,
-  PanelRightOpen,
-  RefreshCw,
-  Search,
-  SquareCheckBig,
-  Trash2,
-  Video,
-} from "lucide-react";
-import { IconButton } from "../../components/IconButton";
+import { FolderPlus } from "lucide-react";
 import { ToolbarButton } from "../../components/ToolbarButton";
 import type { TranslationKey } from "../../i18n";
 import type { MediaKindFilter } from "../../types";
+import { BulkToolbarActions } from "./BulkToolbarActions";
+import { MediaSwitch } from "./MediaSwitch";
+import { ToolbarSearchActions } from "./ToolbarSearchActions";
 
 type Translator = (key: TranslationKey, values?: Record<string, string | number>) => string;
 
@@ -62,51 +53,20 @@ export function MainToolbar({
     <div className="toolbar">
       {hasSource && (
         <>
-          <div className="media-switch" role="group" aria-label={t("media.kind")}>
-            <button
-              aria-pressed={mediaKind === "photos"}
-              className={mediaKind === "photos" ? "active" : ""}
-              onClick={() => onSwitchMediaKind("photos")}
-              type="button"
-            >
-              <Image size={16} /> {t("media.photos")}
-            </button>
-            <button
-              aria-pressed={mediaKind === "videos"}
-              className={mediaKind === "videos" ? "active" : ""}
-              onClick={() => onSwitchMediaKind("videos")}
-              type="button"
-            >
-              <Video size={16} /> {t("media.videos")}
-            </button>
-          </div>
-          <ToolbarButton disabled={scanning || deleting || !rootIsAvailable} onClick={onRescan}>
-            <RefreshCw size={17} /> {t("action.rescan")}
-          </ToolbarButton>
-          <ToolbarButton
-            active={selectionMode}
-            disabled={deleting || !visibleGroupCount}
-            onClick={onToggleSelectionMode}
-          >
-            <SquareCheckBig size={17} />
-            {selectionMode
-              ? t("common.selected", { count: selectedCount })
-              : t("action.multiSelect")}
-          </ToolbarButton>
-          {selectionMode && (
-            <>
-              <ToolbarButton disabled={deleting || !visibleGroupCount} onClick={onSelectAll}>
-                <CheckSquare size={17} /> {t("action.selectAll")}
-              </ToolbarButton>
-              <ToolbarButton
-                disabled={deleting || !selectedCount}
-                onClick={onDeleteSelected}
-                variant="danger"
-              >
-                <Trash2 size={17} /> {t("action.deleteSelected")}
-              </ToolbarButton>
-            </>
-          )}
+          <MediaSwitch mediaKind={mediaKind} onSwitchMediaKind={onSwitchMediaKind} t={t} />
+          <BulkToolbarActions
+            deleting={deleting}
+            rootIsAvailable={rootIsAvailable}
+            scanning={scanning}
+            selectedCount={selectedCount}
+            selectionMode={selectionMode}
+            t={t}
+            visibleGroupCount={visibleGroupCount}
+            onDeleteSelected={onDeleteSelected}
+            onRescan={onRescan}
+            onSelectAll={onSelectAll}
+            onToggleSelectionMode={onToggleSelectionMode}
+          />
         </>
       )}
       {!hasSource && (
@@ -116,23 +76,13 @@ export function MainToolbar({
       )}
       <div className="toolbar-spacer" />
       {hasSource && (
-        <>
-          <label className="searchbox">
-            <Search size={16} />
-            <input
-              value={query}
-              onChange={(event) => onQueryChange(event.target.value)}
-              placeholder={t("search.placeholder")}
-            />
-          </label>
-          <IconButton
-            ariaExpanded={!inspectorCollapsed}
-            label={inspectorCollapsed ? t("common.info") : t("action.close")}
-            onClick={onToggleInspector}
-          >
-            {inspectorCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
-          </IconButton>
-        </>
+        <ToolbarSearchActions
+          inspectorCollapsed={inspectorCollapsed}
+          query={query}
+          t={t}
+          onQueryChange={onQueryChange}
+          onToggleInspector={onToggleInspector}
+        />
       )}
     </div>
   );
