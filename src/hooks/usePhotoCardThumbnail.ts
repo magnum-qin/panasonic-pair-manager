@@ -7,9 +7,7 @@ const loadedThumbnailPaths = new Set<string>();
 
 export function usePhotoCardThumbnail(group: PhotoGroup, thumbnailSize: number) {
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [videoLoaded, setVideoLoaded] = useState(false);
   const isVideo = group.videoCount > 0 && group.rawCount === 0 && group.jpgCount === 0;
-  const videoPreviewPath = isVideo ? group.previewPath : undefined;
   const thumbnailQuery = useQuery({
     enabled: !isVideo && (group.jpgCount > 0 || group.rawCount > 0),
     queryFn: () => getPhotoThumbnail(group.id, thumbnailSize),
@@ -28,10 +26,6 @@ export function usePhotoCardThumbnail(group: PhotoGroup, thumbnailSize: number) 
     setImageLoaded(Boolean(thumbnailPath && loadedThumbnailPaths.has(thumbnailPath)));
   }, [thumbnailPath]);
 
-  useEffect(() => {
-    setVideoLoaded(false);
-  }, [videoPreviewPath]);
-
   const markImageLoaded = () => {
     if (thumbnailPath) loadedThumbnailPaths.add(thumbnailPath);
     setImageLoaded(true);
@@ -42,9 +36,6 @@ export function usePhotoCardThumbnail(group: PhotoGroup, thumbnailSize: number) 
     isFetching: thumbnailQuery.isFetching || videoThumbnailQuery.isFetching,
     isVideo,
     markImageLoaded,
-    setVideoLoaded,
     thumbnailPath,
-    videoLoaded,
-    videoPreviewPath,
   };
 }

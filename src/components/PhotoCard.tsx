@@ -27,16 +27,8 @@ export const PhotoCard = memo(function PhotoCard({
   onToggle: (id: string) => void;
 }) {
   const [isPressed, setIsPressed] = useState(false);
-  const {
-    imageLoaded,
-    isFetching,
-    isVideo,
-    markImageLoaded,
-    setVideoLoaded,
-    thumbnailPath,
-    videoLoaded,
-    videoPreviewPath,
-  } = usePhotoCardThumbnail(group, thumbnailSize);
+  const { imageLoaded, isFetching, isVideo, markImageLoaded, thumbnailPath } =
+    usePhotoCardThumbnail(group, thumbnailSize);
 
   const handlePrimaryAction = (range?: boolean) => {
     onActivate(group.id, range);
@@ -84,10 +76,7 @@ export const PhotoCard = memo(function PhotoCard({
       >
         <div
           className={`thumb ${
-            ((thumbnailPath || group.rawCount > 0) && !imageLoaded) ||
-            (videoPreviewPath && !thumbnailPath && !videoLoaded)
-              ? "loading"
-              : ""
+            (thumbnailPath || group.rawCount > 0) && !imageLoaded ? "loading" : ""
           }`}
         >
           {thumbnailPath ? (
@@ -102,15 +91,6 @@ export const PhotoCard = memo(function PhotoCard({
             />
           ) : isFetching ? (
             <div className="thumb-pending" aria-label="Loading thumbnail" />
-          ) : videoPreviewPath ? (
-            <video
-              className={videoLoaded ? "loaded" : ""}
-              src={convertFileSrc(videoPreviewPath)}
-              muted
-              playsInline
-              preload="metadata"
-              onLoadedData={() => setVideoLoaded(true)}
-            />
           ) : isVideo ? (
             <div className="no-preview video-preview">
               <Video size={34} />
