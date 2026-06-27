@@ -30,6 +30,7 @@ export type TranslationKey =
   | "action.rescan"
   | "action.selectAll"
   | "common.camera"
+  | "common.available"
   | "common.captureTime"
   | "common.codec"
   | "common.dimensions"

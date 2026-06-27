@@ -95,6 +95,11 @@ export interface ThumbnailCacheStats {
   limitBytes: number;
 }
 
+export interface ExternalToolStatus {
+  exiftoolAvailable: boolean;
+  ffmpegAvailable: boolean;
+}
+
 export interface DeleteSummary {
   groups: number;
   files: number;

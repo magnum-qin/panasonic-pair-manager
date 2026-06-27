@@ -56,6 +56,7 @@ pub fn run() {
             commands::delete_photo_groups,
             commands::open_photo_group,
             commands::open_photo_file,
+            commands::get_external_tool_status,
             commands::path_exists,
             commands::list_removable_roots
         ])

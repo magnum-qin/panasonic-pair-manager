@@ -16,6 +16,7 @@ export const en: TranslationMap = {
   "action.open": "Open",
   "action.rescan": "Rescan",
   "action.selectAll": "Select All",
+  "common.available": "Available",
   "common.camera": "Camera",
   "common.captureTime": "Capture Time",
   "common.codec": "Codec",

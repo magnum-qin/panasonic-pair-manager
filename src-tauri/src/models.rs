@@ -144,6 +144,13 @@ pub struct ThumbnailCacheStats {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct ExternalToolStatus {
+    pub exiftool_available: bool,
+    pub ffmpeg_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteSummary {
     pub groups: usize,
     pub files: usize,

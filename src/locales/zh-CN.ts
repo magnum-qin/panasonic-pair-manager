@@ -12,6 +12,7 @@ export const zhCN: TranslationMap = {
   "action.open": "打开",
   "action.rescan": "重新扫描",
   "action.selectAll": "全选",
+  "common.available": "可用",
   "common.camera": "相机",
   "common.captureTime": "拍摄时间",
   "common.dimensions": "尺寸",

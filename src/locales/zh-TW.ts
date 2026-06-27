@@ -12,6 +12,7 @@ export const zhTW: TranslationMap = {
   "action.open": "開啟",
   "action.rescan": "重新掃描",
   "action.selectAll": "全選",
+  "common.available": "可用",
   "common.camera": "相機",
   "common.captureTime": "拍攝時間",
   "common.dimensions": "尺寸",

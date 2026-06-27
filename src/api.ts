@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   DeleteSummary,
   DriveCandidate,
+  ExternalToolStatus,
   PhotoGroup,
   PhotoGroupDetail,
   PhotoGroupFilter,
@@ -76,4 +77,8 @@ export function listRemovableRoots() {
 
 export function pathExists(path: string) {
   return invoke<boolean>("path_exists", { path });
+}
+
+export function getExternalToolStatus() {
+  return invoke<ExternalToolStatus>("get_external_tool_status");
 }

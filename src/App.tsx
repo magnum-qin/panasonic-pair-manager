@@ -1,7 +1,8 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Video } from "lucide-react";
 import { useCallback, useDeferredValue, lazy, useRef, useState, Suspense } from "react";
 import { PhotoGrid } from "./components/PhotoGrid";
+import { getExternalToolStatus } from "./api";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
 import { AppShellLayout } from "./features/app/AppShellLayout";
 import { AppStatusBar } from "./features/app/AppStatusBar";
@@ -70,6 +71,11 @@ export default function App() {
     settingsOpen,
   } = useModalLifecycle();
   const [inspectorTab, setInspectorTab] = useState<"info" | "metadata">("info");
+  const externalToolStatusQuery = useQuery({
+    enabled: aboutOpen,
+    queryFn: getExternalToolStatus,
+    queryKey: ["external-tool-status"],
+  });
   const { galleryLayoutTransitioning, inspectorCollapsed, toggleInspector } =
     useGalleryLayoutTransition();
   const {
@@ -403,7 +409,14 @@ export default function App() {
         />
       )}
 
-      {aboutOpen && <AboutModal closing={closingModal === "about"} onClose={closeAbout} t={t} />}
+      {aboutOpen && (
+        <AboutModal
+          closing={closingModal === "about"}
+          onClose={closeAbout}
+          t={t}
+          toolStatus={externalToolStatusQuery.data}
+        />
+      )}
 
       {settingsOpen && (
         <SettingsModal
