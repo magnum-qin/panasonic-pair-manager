@@ -1,5 +1,6 @@
 use super::cache_key::thumbnail_cache_path;
 use super::external_tools::write_ffmpeg_video_thumbnail;
+use crate::cache;
 use crate::models::FileKind;
 use crate::state::AppState;
 use std::path::PathBuf;
@@ -48,6 +49,10 @@ pub(crate) async fn get_video_thumbnail(
             return Ok(Some(cache_path.to_string_lossy().to_string()));
         }
         if write_ffmpeg_video_thumbnail(&source, &cache_path, size).is_ok() {
+            let _ = cache::enforce_thumbnail_cache_limit(
+                &thumbnail_dir,
+                cache::THUMBNAIL_CACHE_LIMIT_BYTES,
+            );
             return Ok(Some(cache_path.to_string_lossy().to_string()));
         }
 

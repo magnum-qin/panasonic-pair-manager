@@ -97,6 +97,7 @@ export interface ScanProgress {
 export interface ThumbnailCacheStats {
   files: number;
   bytes: number;
+  limitBytes: number;
 }
 
 export interface DeleteSummary {

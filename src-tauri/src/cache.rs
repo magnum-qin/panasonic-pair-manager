@@ -7,7 +7,10 @@ pub(crate) const THUMBNAIL_CACHE_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
 pub(crate) fn thumbnail_cache_stats(
     thumbnail_dir: &PathBuf,
 ) -> Result<ThumbnailCacheStats, String> {
-    let mut stats = ThumbnailCacheStats::default();
+    let mut stats = ThumbnailCacheStats {
+        limit_bytes: THUMBNAIL_CACHE_LIMIT_BYTES,
+        ..ThumbnailCacheStats::default()
+    };
     if !thumbnail_dir.exists() {
         return Ok(stats);
     }

@@ -92,6 +92,8 @@ export function SettingsModal({
             <strong>
               {formatBytes(cacheStats?.bytes ?? 0)}
               {" / "}
+              {formatBytes(cacheStats?.limitBytes ?? 0)}
+              {" / "}
               {t("setting.cacheFiles", { count: cacheStats?.files ?? 0 })}
             </strong>
             <Button disabled={clearingCache} onClick={onClearCache}>

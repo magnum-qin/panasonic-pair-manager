@@ -139,6 +139,7 @@ pub struct ScanProgress {
 pub struct ThumbnailCacheStats {
     pub files: usize,
     pub bytes: u64,
+    pub limit_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

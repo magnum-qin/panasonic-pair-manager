@@ -1,5 +1,6 @@
 use super::cache_key::thumbnail_cache_path;
 use super::external_tools::{write_embedded_thumbnail, write_exiftool_preview};
+use crate::cache;
 use crate::models::FileKind;
 use crate::state::AppState;
 use image::codecs::jpeg::JpegEncoder;
@@ -53,9 +54,17 @@ pub(crate) async fn get_photo_thumbnail(
             return Ok(Some(cache_path.to_string_lossy().to_string()));
         }
         if write_embedded_thumbnail(&source, &cache_path).is_ok() {
+            let _ = cache::enforce_thumbnail_cache_limit(
+                &thumbnail_dir,
+                cache::THUMBNAIL_CACHE_LIMIT_BYTES,
+            );
             return Ok(Some(cache_path.to_string_lossy().to_string()));
         }
         if write_exiftool_preview(&source, &cache_path).is_ok() {
+            let _ = cache::enforce_thumbnail_cache_limit(
+                &thumbnail_dir,
+                cache::THUMBNAIL_CACHE_LIMIT_BYTES,
+            );
             return Ok(Some(cache_path.to_string_lossy().to_string()));
         }
 
@@ -64,6 +73,10 @@ pub(crate) async fn get_photo_thumbnail(
         }
 
         write_jpg_thumbnail(&source, &cache_path, size)?;
+        let _ = cache::enforce_thumbnail_cache_limit(
+            &thumbnail_dir,
+            cache::THUMBNAIL_CACHE_LIMIT_BYTES,
+        );
         Ok(Some(cache_path.to_string_lossy().to_string()))
     })
     .await
