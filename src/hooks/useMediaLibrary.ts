@@ -12,6 +12,7 @@ import {
 import { getGroupsFilter } from "../features/app/app-utils";
 import type { GroupKindFilter, MediaKindFilter, PhotoSortMode, ScanSummary } from "../types";
 import { PAGE_SIZE } from "../utils";
+import { filterGroupsForMediaKind } from "./mediaLibrary-utils";
 
 export function useMediaLibrary({
   activeId,
@@ -78,12 +79,10 @@ export function useMediaLibrary({
     queryKey: ["thumbnail-cache-stats"],
   });
 
-  const groups =
-    groupsQuery.data?.pages
-      .flatMap((page) => page.slice(0, PAGE_SIZE))
-      .filter((group) =>
-        mediaKind === "videos" ? group.videoCount > 0 : group.rawCount > 0 || group.jpgCount > 0,
-      ) ?? [];
+  const groups = filterGroupsForMediaKind(
+    groupsQuery.data?.pages.flatMap((page) => page.slice(0, PAGE_SIZE)) ?? [],
+    mediaKind,
+  );
 
   const detailQuery = useQuery({
     enabled: Boolean(activeId),

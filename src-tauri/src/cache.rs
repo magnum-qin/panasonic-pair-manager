@@ -65,3 +65,35 @@ pub(crate) fn enforce_thumbnail_cache_limit(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn reports_thumbnail_cache_limit_with_stats() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("thumb.jpg"), vec![1u8; 8]).unwrap();
+
+        let stats = thumbnail_cache_stats(&dir.path().to_path_buf()).unwrap();
+
+        assert_eq!(stats.files, 1);
+        assert_eq!(stats.bytes, 8);
+        assert_eq!(stats.limit_bytes, THUMBNAIL_CACHE_LIMIT_BYTES);
+    }
+
+    #[test]
+    fn removes_cache_files_until_under_limit() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.jpg"), vec![1u8; 40]).unwrap();
+        fs::write(dir.path().join("b.jpg"), vec![1u8; 40]).unwrap();
+        fs::write(dir.path().join("c.jpg"), vec![1u8; 40]).unwrap();
+
+        enforce_thumbnail_cache_limit(&dir.path().to_path_buf(), 80).unwrap();
+        let stats = thumbnail_cache_stats(&dir.path().to_path_buf()).unwrap();
+
+        assert!(stats.bytes <= 80);
+        assert!(stats.files <= 2);
+    }
+}
