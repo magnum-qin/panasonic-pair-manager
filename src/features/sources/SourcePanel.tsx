@@ -1,9 +1,8 @@
-import { FolderPlus, RefreshCw } from "lucide-react";
-import { IconButton } from "../../components/IconButton";
-import { SidebarItem } from "../../components/SidebarItem";
 import type { TranslationKey } from "../../i18n";
 import type { DriveCandidate, GroupKindFilter, MediaKindFilter, ScanSummary } from "../../types";
-import { fileName } from "../../utils";
+import { CurrentSourceFallback } from "./CurrentSourceFallback";
+import { FixedSourceList } from "./FixedSourceList";
+import { RemovableSourceList } from "./RemovableSourceList";
 import { ScanSummaryPanel } from "./ScanSummaryPanel";
 
 type Translator = (key: TranslationKey, values?: Record<string, string | number>) => string;
@@ -53,82 +52,43 @@ export function SourcePanel({
   onSelectManualRoot: (path: string) => void;
   onSelectRemovableRoot: (drive: DriveCandidate) => void;
 }) {
+  const showCurrentSource =
+    rootPath &&
+    !manualRootSet.has(rootPath) &&
+    !detectedRoots.some((drive) => drive.scanPath === rootPath);
+
   return (
     <aside className="sidebar">
       <section className="sidebar-module sources-module">
         <div className="source-group">
-          <div className="source-section">
-            <div className="source-group-header">
-              <span>{t("source.fixedFolders")}</span>
-              <IconButton disabled={deleting} label={t("source.addFolder")} onClick={onAddFolder}>
-                <FolderPlus size={15} />
-              </IconButton>
-            </div>
-            {manualRoots.length ? (
-              manualRoots.map((path) => (
-                <SidebarItem
-                  active={rootPath === path}
-                  disabled={deleting}
-                  key={path}
-                  label={fileName(path) || path}
-                  onClear={() => onClearManualRoot(path)}
-                  onClick={() => onSelectManualRoot(path)}
-                  removeLabel={t("source.removeFolder")}
-                  subtitle={
-                    manualAvailability.get(path) === false
-                      ? `${path} 路 ${t("source.unavailable")}`
-                      : path
-                  }
-                  tone={manualAvailability.get(path) === false ? "offline" : undefined}
-                />
-              ))
-            ) : (
-              <div className="empty-note compact">{t("source.fixedEmpty")}</div>
-            )}
-          </div>
+          <FixedSourceList
+            deleting={deleting}
+            manualAvailability={manualAvailability}
+            manualRoots={manualRoots}
+            rootPath={rootPath}
+            t={t}
+            onAddFolder={onAddFolder}
+            onClearManualRoot={onClearManualRoot}
+            onSelectManualRoot={onSelectManualRoot}
+          />
 
-          <div className="source-section">
-            <div className="source-group-header">
-              <span>{t("source.removableDevices")}</span>
-              <IconButton
-                disabled={false}
-                label={t("source.refresh")}
-                onClick={onRefreshRemovableRoots}
-              >
-                <RefreshCw size={14} />
-              </IconButton>
-            </div>
-            {detectedRoots.length ? (
-              detectedRoots.map((drive) => (
-                <SidebarItem
-                  active={rootPath === drive.scanPath}
-                  disabled={deleting}
-                  key={drive.scanPath}
-                  label={drive.displayName}
-                  onClick={() => onSelectRemovableRoot(drive)}
-                  subtitle={drive.scanPath}
-                />
-              ))
-            ) : (
-              <div className="empty-note">{t("source.empty")}</div>
-            )}
-          </div>
+          <RemovableSourceList
+            deleting={deleting}
+            detectedRoots={detectedRoots}
+            rootPath={rootPath}
+            t={t}
+            onRefreshRemovableRoots={onRefreshRemovableRoots}
+            onSelectRemovableRoot={onSelectRemovableRoot}
+          />
 
-          {rootPath &&
-          !manualRootSet.has(rootPath) &&
-          !detectedRoots.some((drive) => drive.scanPath === rootPath) ? (
-            <div className="source-section">
-              <div className="source-group-header">
-                <span>{t("source.currentSource")}</span>
-              </div>
-              <SidebarItem
-                active
-                disabled={deleting || scanPending}
-                label={fileName(rootPath) || rootPath}
-                onClick={onSelectCurrentSource}
-                subtitle={rootPath}
-              />
-            </div>
+          {showCurrentSource ? (
+            <CurrentSourceFallback
+              deleting={deleting}
+              rootPath={rootPath}
+              scanPending={scanPending}
+              t={t}
+              onSelectCurrentSource={onSelectCurrentSource}
+            />
           ) : null}
         </div>
       </section>
