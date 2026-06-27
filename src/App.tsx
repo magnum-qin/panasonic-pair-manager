@@ -3,6 +3,7 @@ import { Video } from "lucide-react";
 import { useCallback, useDeferredValue, lazy, useRef, useState, Suspense } from "react";
 import { PhotoGrid } from "./components/PhotoGrid";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
+import { AppShellLayout } from "./features/app/AppShellLayout";
 import { AppStatusBar } from "./features/app/AppStatusBar";
 import { activeMemoryKey, dirName, isPreviewWindowRoute } from "./features/app/app-utils";
 import { MainToolbar } from "./features/app/MainToolbar";
@@ -254,65 +255,9 @@ export default function App() {
   });
 
   return (
-    <div className={`app-shell ${selectionMode ? "selection-mode" : ""}`}>
-      <div className="app-content" aria-hidden={modalOpen ? true : undefined}>
-        <MainToolbar
-          deleting={deleting}
-          hasSource={hasSource}
-          inspectorCollapsed={inspectorCollapsed}
-          mediaKind={mediaKind}
-          query={query}
-          rootIsAvailable={rootIsAvailable}
-          scanning={scanning}
-          selectedCount={selected.size}
-          selectionMode={selectionMode}
-          t={t}
-          visibleGroupCount={visibleGroups.length}
-          onChooseFolder={chooseFolder}
-          onDeleteSelected={openDelete}
-          onQueryChange={(value) => {
-            setQuery(value);
-            setActiveId("");
-            clearSelection();
-          }}
-          onRescan={() => scan()}
-          onSelectAll={selectAllVisibleGroups}
-          onSwitchMediaKind={switchMediaKind}
-          onToggleInspector={toggleInspector}
-          onToggleSelectionMode={toggleSelectionMode}
-        />
-
-        <main
-          className={`workspace ${inspectorCollapsed ? "inspector-collapsed" : ""} ${
-            galleryLayoutTransitioning ? "gallery-layout-transitioning" : ""
-          }`}
-        >
-          <SourcePanel
-            currentSummary={currentSummary}
-            deleting={deleting}
-            detectedRoots={detectedRoots}
-            groupKind={groupKind}
-            hasSource={hasSource}
-            manualAvailability={manualAvailability}
-            manualRootSet={manualRootSet}
-            manualRoots={manualRoots}
-            mediaKind={mediaKind}
-            mediaTransitioning={mediaTransitioning}
-            rootPath={rootPath}
-            scanPending={scanMutation.isPending}
-            t={t}
-            visibleGroupCount={visibleGroups.length}
-            onAddFolder={chooseFolder}
-            onApplyKindFilter={applyKindFilter}
-            onClearManualRoot={clearManualRoot}
-            onRefreshRemovableRoots={refreshRemovableRoots}
-            onSelectCurrentSource={() =>
-              queryClient.invalidateQueries({ queryKey: ["photo-groups"] })
-            }
-            onSelectManualRoot={selectManualRoot}
-            onSelectRemovableRoot={selectRemovableRoot}
-          />
-
+    <>
+      <AppShellLayout
+        gallery={
           <PhotoGrid
             activeId={activeId}
             emptyActionLabel={t("action.chooseFolder")}
@@ -354,8 +299,10 @@ export default function App() {
             selected={selected}
             totalGroups={visibleGroupCount}
           />
-
-          {!inspectorCollapsed && (
+        }
+        galleryLayoutTransitioning={galleryLayoutTransitioning}
+        inspector={
+          !inspectorCollapsed ? (
             <InspectorPanel
               activeId={activeId}
               detail={detailQuery.data}
@@ -369,16 +316,74 @@ export default function App() {
               onTabChange={setInspectorTab}
               t={t}
             />
-          )}
-        </main>
-
-        <AppStatusBar
-          onOpenAbout={openAbout}
-          onOpenSettings={openSettings}
-          statusMessage={statusMessage}
-          t={t}
-        />
-      </div>
+          ) : null
+        }
+        inspectorCollapsed={inspectorCollapsed}
+        modalOpen={modalOpen}
+        selectionMode={selectionMode}
+        sidebar={
+          <SourcePanel
+            currentSummary={currentSummary}
+            deleting={deleting}
+            detectedRoots={detectedRoots}
+            groupKind={groupKind}
+            hasSource={hasSource}
+            manualAvailability={manualAvailability}
+            manualRootSet={manualRootSet}
+            manualRoots={manualRoots}
+            mediaKind={mediaKind}
+            mediaTransitioning={mediaTransitioning}
+            rootPath={rootPath}
+            scanPending={scanMutation.isPending}
+            t={t}
+            visibleGroupCount={visibleGroups.length}
+            onAddFolder={chooseFolder}
+            onApplyKindFilter={applyKindFilter}
+            onClearManualRoot={clearManualRoot}
+            onRefreshRemovableRoots={refreshRemovableRoots}
+            onSelectCurrentSource={() =>
+              queryClient.invalidateQueries({ queryKey: ["photo-groups"] })
+            }
+            onSelectManualRoot={selectManualRoot}
+            onSelectRemovableRoot={selectRemovableRoot}
+          />
+        }
+        statusbar={
+          <AppStatusBar
+            onOpenAbout={openAbout}
+            onOpenSettings={openSettings}
+            statusMessage={statusMessage}
+            t={t}
+          />
+        }
+        toolbar={
+          <MainToolbar
+            deleting={deleting}
+            hasSource={hasSource}
+            inspectorCollapsed={inspectorCollapsed}
+            mediaKind={mediaKind}
+            query={query}
+            rootIsAvailable={rootIsAvailable}
+            scanning={scanning}
+            selectedCount={selected.size}
+            selectionMode={selectionMode}
+            t={t}
+            visibleGroupCount={visibleGroups.length}
+            onChooseFolder={chooseFolder}
+            onDeleteSelected={openDelete}
+            onQueryChange={(value) => {
+              setQuery(value);
+              setActiveId("");
+              clearSelection();
+            }}
+            onRescan={() => scan()}
+            onSelectAll={selectAllVisibleGroups}
+            onSwitchMediaKind={switchMediaKind}
+            onToggleInspector={toggleInspector}
+            onToggleSelectionMode={toggleSelectionMode}
+          />
+        }
+      />
 
       {contextMenu && (
         <PhotoContextMenu
@@ -431,6 +436,6 @@ export default function App() {
           t={t}
         />
       )}
-    </div>
+    </>
   );
 }
