@@ -1,7 +1,6 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Info, Settings, Video } from "lucide-react";
 import { useCallback, useDeferredValue, lazy, useRef, useState, Suspense } from "react";
-import { clearThumbnailCache, deletePhotoGroups } from "./api";
 import { PhotoGrid } from "./components/PhotoGrid";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
 import { activeMemoryKey, dirName, isPreviewWindowRoute } from "./features/app/app-utils";
@@ -14,6 +13,7 @@ import { useSelectionMode } from "./hooks/useSelectionMode";
 import { usePreviewWindow } from "./hooks/usePreviewWindow";
 import { useMediaLibrary } from "./hooks/useMediaLibrary";
 import { useAppPreferences } from "./hooks/useAppPreferences";
+import { useAppMutations } from "./hooks/useAppMutations";
 import { useDeleteWorkflow } from "./hooks/useDeleteWorkflow";
 import { useGalleryStateCoordinator } from "./hooks/useGalleryStateCoordinator";
 import { useGalleryLayoutTransition } from "./hooks/useGalleryLayoutTransition";
@@ -109,39 +109,6 @@ export default function App() {
     scanSummary,
   });
 
-  const clearThumbnailCacheMutation = useMutation({
-    mutationFn: clearThumbnailCache,
-    onSuccess: (stats) => {
-      queryClient.setQueryData(["thumbnail-cache-stats"], stats);
-      queryClient.removeQueries({ queryKey: ["photo-thumbnail"] });
-      setMessage(t("status.thumbnailCacheCleared"));
-    },
-    onError: (error) => setMessage(String(error)),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: deletePhotoGroups,
-    onSuccess: async (summary) => {
-      closeDelete();
-      clearSelection();
-      setActiveId("");
-      await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
-      await queryClient.invalidateQueries({ queryKey: ["photo-group-count"] });
-      await queryClient.invalidateQueries({ queryKey: ["scan-summary", rootPath] });
-      await queryClient.invalidateQueries({ queryKey: ["photo-group-detail"] });
-      setMessage(
-        t("status.deleted", {
-          count: summary.files - summary.failed.length,
-          failed: summary.failed.length
-            ? t("status.deletedFailed", { count: summary.failed.length })
-            : "",
-        }),
-      );
-    },
-    onError: (error) => setMessage(String(error)),
-  });
-
-  const deleting = deleteMutation.isPending;
   const rememberActiveGroup = useCallback(
     (id: string, sourcePath = rootPath) => {
       setActiveId(id);
@@ -170,6 +137,16 @@ export default function App() {
     hasSource,
     onActivate: rememberActiveGroup,
     visibleGroups,
+  });
+  const { clearThumbnailCacheMutation, confirmDelete, deleting } = useAppMutations({
+    clearSelection,
+    closeDelete,
+    queryClient,
+    rootPath,
+    selected,
+    setActiveId,
+    setMessage,
+    t,
   });
   const { scan, scanMutation, scanProgressText, scanning } = useScanWorkflow({
     clearSelection,
@@ -228,11 +205,6 @@ export default function App() {
     selectedGroups,
     selectedIds,
   });
-
-  const confirmDelete = useCallback(() => {
-    if (!selected.size) return;
-    deleteMutation.mutate([...selected]);
-  }, [deleteMutation, selected]);
 
   const {
     closePhotoContextMenu,
