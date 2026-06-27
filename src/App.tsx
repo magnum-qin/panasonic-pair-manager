@@ -1,8 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Info, Settings, Video } from "lucide-react";
+import { Video } from "lucide-react";
 import { useCallback, useDeferredValue, lazy, useRef, useState, Suspense } from "react";
 import { PhotoGrid } from "./components/PhotoGrid";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
+import { AppStatusBar } from "./features/app/AppStatusBar";
 import { activeMemoryKey, dirName, isPreviewWindowRoute } from "./features/app/app-utils";
 import { MainToolbar } from "./features/app/MainToolbar";
 import { GalleryControls } from "./features/gallery/GalleryControls";
@@ -371,20 +372,12 @@ export default function App() {
           )}
         </main>
 
-        <footer className="statusbar">
-          <div className="status-message">
-            <CheckCircle2 size={16} />
-            <span>{statusMessage}</span>
-          </div>
-          <div className="status-actions">
-            <button className="status-info" aria-label={t("common.info")} onClick={openAbout}>
-              <Info size={15} />
-            </button>
-            <button className="status-info" aria-label={t("setting.open")} onClick={openSettings}>
-              <Settings size={15} />
-            </button>
-          </div>
-        </footer>
+        <AppStatusBar
+          onOpenAbout={openAbout}
+          onOpenSettings={openSettings}
+          statusMessage={statusMessage}
+          t={t}
+        />
       </div>
 
       {contextMenu && (
