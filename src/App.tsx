@@ -22,13 +22,7 @@ import {
   selectRootFolder,
 } from "./api";
 import { PhotoGrid } from "./components/PhotoGrid";
-import {
-  GALLERY_LAYOUT_FADE_MS,
-  GALLERY_LAYOUT_SETTLE_MS,
-  MEDIA_SWITCH_FADE_MS,
-  MEDIA_SWITCH_SETTLE_MS,
-  MANUAL_ROOTS_STORAGE_KEY,
-} from "./features/app/app-config";
+import { MANUAL_ROOTS_STORAGE_KEY } from "./features/app/app-config";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
 import {
   activeMemoryKey,
@@ -47,6 +41,8 @@ import { useMediaLibrary } from "./hooks/useMediaLibrary";
 import { useSourceSelection } from "./hooks/useSourceSelection";
 import { useAppPreferences } from "./hooks/useAppPreferences";
 import { useDeleteWorkflow } from "./hooks/useDeleteWorkflow";
+import { useGalleryLayoutTransition } from "./hooks/useGalleryLayoutTransition";
+import { useMediaMode } from "./hooks/useMediaMode";
 import type {
   DriveCandidate,
   GroupKindFilter,
@@ -72,8 +68,6 @@ export default function App() {
   const [rootPath, setRootPath] = useState("");
   const [activeId, setActiveId] = useState("");
   const [query, setQuery] = useState("");
-  const [groupKind, setGroupKind] = useState<GroupKindFilter>("all");
-  const [mediaKind, setMediaKind] = useState<MediaKindFilter>("photos");
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const {
     cardSize,
@@ -93,9 +87,15 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [closingModal, setClosingModal] = useState<"about" | "settings" | "delete" | null>(null);
   const [inspectorTab, setInspectorTab] = useState<"info" | "metadata">("info");
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
-  const [galleryLayoutTransitioning, setGalleryLayoutTransitioning] = useState(false);
-  const [mediaTransitioning, setMediaTransitioning] = useState(false);
+  const { galleryLayoutTransitioning, inspectorCollapsed, toggleInspector } =
+    useGalleryLayoutTransition();
+  const {
+    groupKind,
+    mediaKind,
+    mediaTransitioning,
+    setGroupKind,
+    switchMediaKind: transitionMediaKind,
+  } = useMediaMode();
   const [contextMenu, setContextMenu] = useState<{
     group: PhotoGroup;
     x: number;
@@ -111,10 +111,6 @@ export default function App() {
   const refreshTimerRef = useRef<number | undefined>(undefined);
   const refreshDelayTimerRef = useRef<number | undefined>(undefined);
   const refreshLockedRef = useRef(false);
-  const galleryFadeTimerRef = useRef<number | undefined>(undefined);
-  const gallerySettleTimerRef = useRef<number | undefined>(undefined);
-  const mediaFadeTimerRef = useRef<number | undefined>(undefined);
-  const mediaSettleTimerRef = useRef<number | undefined>(undefined);
 
   const clearActiveSource = useCallback((nextMessage?: string) => {
     setRootPath("");
@@ -122,49 +118,6 @@ export default function App() {
     setScanSummary(null);
     if (nextMessage) setMessage(nextMessage);
   }, []);
-
-  const clearGalleryLayoutTimers = useCallback(() => {
-    if (galleryFadeTimerRef.current !== undefined) {
-      window.clearTimeout(galleryFadeTimerRef.current);
-      galleryFadeTimerRef.current = undefined;
-    }
-    if (gallerySettleTimerRef.current !== undefined) {
-      window.clearTimeout(gallerySettleTimerRef.current);
-      gallerySettleTimerRef.current = undefined;
-    }
-  }, []);
-
-  const toggleInspector = useCallback(() => {
-    if (galleryLayoutTransitioning) return;
-
-    clearGalleryLayoutTimers();
-    setGalleryLayoutTransitioning(true);
-
-    galleryFadeTimerRef.current = window.setTimeout(() => {
-      setInspectorCollapsed((current) => !current);
-      galleryFadeTimerRef.current = undefined;
-
-      gallerySettleTimerRef.current = window.setTimeout(() => {
-        setGalleryLayoutTransitioning(false);
-        gallerySettleTimerRef.current = undefined;
-      }, GALLERY_LAYOUT_SETTLE_MS);
-    }, GALLERY_LAYOUT_FADE_MS);
-  }, [clearGalleryLayoutTimers, galleryLayoutTransitioning]);
-
-  useEffect(() => () => clearGalleryLayoutTimers(), [clearGalleryLayoutTimers]);
-
-  const clearMediaTransitionTimers = useCallback(() => {
-    if (mediaFadeTimerRef.current !== undefined) {
-      window.clearTimeout(mediaFadeTimerRef.current);
-      mediaFadeTimerRef.current = undefined;
-    }
-    if (mediaSettleTimerRef.current !== undefined) {
-      window.clearTimeout(mediaSettleTimerRef.current);
-      mediaSettleTimerRef.current = undefined;
-    }
-  }, []);
-
-  useEffect(() => () => clearMediaTransitionTimers(), [clearMediaTransitionTimers]);
 
   useEffect(() => {
     window.localStorage.setItem(MANUAL_ROOTS_STORAGE_KEY, JSON.stringify(manualRoots));
@@ -533,26 +486,13 @@ export default function App() {
 
   const switchMediaKind = useCallback(
     (nextKind: MediaKindFilter) => {
-      if (nextKind === mediaKind || mediaTransitioning) return;
-
-      clearMediaTransitionTimers();
-      setMediaTransitioning(true);
-
-      mediaFadeTimerRef.current = window.setTimeout(() => {
-        setMediaKind(nextKind);
-        setGroupKind("all");
+      transitionMediaKind(nextKind, () => {
         clearSelection();
         setActiveId("");
         setInspectorTab("info");
-        mediaFadeTimerRef.current = undefined;
-
-        mediaSettleTimerRef.current = window.setTimeout(() => {
-          setMediaTransitioning(false);
-          mediaSettleTimerRef.current = undefined;
-        }, MEDIA_SWITCH_SETTLE_MS);
-      }, MEDIA_SWITCH_FADE_MS);
+      });
     },
-    [clearMediaTransitionTimers, clearSelection, mediaKind, mediaTransitioning],
+    [clearSelection, transitionMediaKind],
   );
 
   const openPhotoContextMenu = useCallback((group: PhotoGroup, x: number, y: number) => {
