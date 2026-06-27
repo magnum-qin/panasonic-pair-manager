@@ -18,7 +18,6 @@ import {
   openPhotoFile,
   openPhotoGroup,
   pathExists,
-  scanRoot,
   selectRootFolder,
 } from "./api";
 import { PhotoGrid } from "./components/PhotoGrid";
@@ -43,12 +42,12 @@ import { useAppPreferences } from "./hooks/useAppPreferences";
 import { useDeleteWorkflow } from "./hooks/useDeleteWorkflow";
 import { useGalleryLayoutTransition } from "./hooks/useGalleryLayoutTransition";
 import { useMediaMode } from "./hooks/useMediaMode";
+import { useScanWorkflow } from "./hooks/useScanWorkflow";
 import type {
   DriveCandidate,
   GroupKindFilter,
   MediaKindFilter,
   PhotoGroup,
-  ScanProgress,
   ScanSummary,
 } from "./types";
 import { fileName } from "./utils";
@@ -102,7 +101,6 @@ export default function App() {
     y: number;
   } | null>(null);
   const [manualRoots, setManualRoots] = useState<string[]>(loadStoredManualRoots);
-  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const deferredQuery = useDeferredValue(query);
   const activeByRootRef = useRef<Record<string, string>>({});
   const knownDrivePathsRef = useRef<Set<string>>(new Set());
@@ -215,56 +213,6 @@ export default function App() {
     };
   }, [queryClient, rootPath]);
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-
-    listen<ScanProgress>("scan-progress", (event) => {
-      setScanProgress(event.payload);
-    }).then((nextUnlisten) => {
-      if (cancelled) {
-        nextUnlisten();
-        return;
-      }
-      unlisten = nextUnlisten;
-    });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, []);
-
-  const scanMutation = useMutation({
-    mutationFn: scanRoot,
-    onMutate: (path) => {
-      setScanProgress({
-        rootPath: path,
-        scannedFiles: 0,
-        matchedFiles: 0,
-        currentDir: path,
-        done: false,
-      });
-      setMessage(t("status.scanning"));
-    },
-    onSuccess: async (summary) => {
-      setRootPath(summary.rootPath);
-      setScanSummary(summary);
-      clearSelection();
-      setActiveId("");
-      setQuery("");
-      await queryClient.invalidateQueries({ queryKey: ["photo-groups"] });
-      await queryClient.invalidateQueries({ queryKey: ["photo-group-count"] });
-      await queryClient.invalidateQueries({ queryKey: ["root-scan-state", summary.rootPath] });
-      await queryClient.invalidateQueries({ queryKey: ["scan-summary", summary.rootPath] });
-      setMessage(t("status.scanCompleted", { groups: summary.groups, files: summary.files }));
-    },
-    onError: (error) => {
-      setScanProgress(null);
-      setMessage(String(error));
-    },
-  });
-
   const deleteMutation = useMutation({
     mutationFn: deletePhotoGroups,
     onSuccess: async (summary) => {
@@ -287,9 +235,7 @@ export default function App() {
     onError: (error) => setMessage(String(error)),
   });
 
-  const scanning = scanMutation.isPending;
   const deleting = deleteMutation.isPending;
-  const busy = scanning || deleting;
   const detectedRoots = drivesQuery.data ?? [];
   const {
     activeSourceIsManual,
@@ -303,8 +249,6 @@ export default function App() {
     manualRoots,
     rootPath,
   });
-  const sourceWasScanned =
-    rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
   const rememberActiveGroup = useCallback(
     (id: string, sourcePath = rootPath) => {
       setActiveId(id);
@@ -334,14 +278,20 @@ export default function App() {
     onActivate: rememberActiveGroup,
     visibleGroups,
   });
-  const scanProgressText =
-    scanning && scanProgress?.rootPath === rootPath
-      ? t("status.scanProgress", {
-          scanned: scanProgress.scannedFiles,
-          matched: scanProgress.matchedFiles,
-          dir: fileName(scanProgress.currentDir) || scanProgress.currentDir,
-        })
-      : "";
+  const { scan, scanMutation, scanProgressText, scanning } = useScanWorkflow({
+    clearSelection,
+    queryClient,
+    rootPath,
+    setActiveId,
+    setMessage,
+    setQuery,
+    setRootPath,
+    setScanSummary,
+    t,
+  });
+  const busy = scanning || deleting;
+  const sourceWasScanned =
+    rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
   const statusMessage = scanProgressText || message;
   const emptyState = useMemo(() => {
     if (hasSource && !rootIsAvailable) {
@@ -431,14 +381,6 @@ export default function App() {
     setMessage(t("source.folderSelected"));
     scanMutation.mutate(path);
   }, [scanMutation, t]);
-
-  const scan = useCallback(
-    (path = rootPath) => {
-      if (!path) return;
-      scanMutation.mutate(path);
-    },
-    [rootPath, scanMutation],
-  );
 
   const refreshRemovableRoots = useCallback(() => {
     if (refreshLockedRef.current) return;
