@@ -74,7 +74,14 @@ export function InspectorInfoPanel({
             <SummaryRow
               label={t("common.duration")}
               value={
-                metadataValue(metadata, "Duration") ??
+                metadata?.duration ??
+                (metadataFetching ? t("metadata.reading") : t("metadata.unknown"))
+              }
+            />
+            <SummaryRow
+              label={t("common.codec")}
+              value={
+                metadata?.videoCodec ??
                 (metadataFetching ? t("metadata.reading") : t("metadata.unknown"))
               }
             />
@@ -104,9 +111,4 @@ export function InspectorInfoPanel({
       </section>
     </>
   );
-}
-
-function metadataValue(metadata: PhotoGroupMetadata | undefined, tag: string) {
-  const normalizedTag = tag.toLowerCase();
-  return metadata?.items.find((item) => item.tag.toLowerCase() === normalizedTag)?.value;
 }

@@ -11,6 +11,8 @@ pub struct Metadata {
     pub lens: Option<String>,
     pub width: Option<i64>,
     pub height: Option<i64>,
+    pub duration: Option<String>,
+    pub video_codec: Option<String>,
     pub items: Vec<MetadataItem>,
 }
 
@@ -57,6 +59,17 @@ fn read_metadata_with_exiftool(path: &Path) -> Result<Metadata, String> {
         lens: object_value(object, "LensModel").or_else(|| object_value(object, "Lens")),
         width: object_i64(object, "ImageWidth"),
         height: object_i64(object, "ImageHeight"),
+        duration: first_object_value(object, &["Duration", "MediaDuration"]),
+        video_codec: first_object_value(
+            object,
+            &[
+                "VideoCodec",
+                "CompressorID",
+                "CompressorName",
+                "CodecID",
+                "Format",
+            ],
+        ),
         items: object
             .iter()
             .filter_map(|(tag, value)| {
@@ -121,6 +134,8 @@ fn read_jpg_metadata(path: &Path) -> Result<Metadata, String> {
             .or_else(|| field_u32(&exif, exif::Tag::ImageWidth)),
         height: field_u32(&exif, exif::Tag::PixelYDimension)
             .or_else(|| field_u32(&exif, exif::Tag::ImageLength)),
+        duration: None,
+        video_codec: None,
         items: exif
             .fields()
             .filter_map(|field| {
@@ -153,12 +168,18 @@ impl Metadata {
             || self.lens.is_some()
             || self.width.is_some()
             || self.height.is_some()
+            || self.duration.is_some()
+            || self.video_codec.is_some()
             || !self.items.is_empty()
     }
 }
 
 fn object_value(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
     object.get(key).and_then(value_to_string)
+}
+
+fn first_object_value(object: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| object_value(object, key))
 }
 
 fn object_i64(object: &serde_json::Map<String, Value>, key: &str) -> Option<i64> {

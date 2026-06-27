@@ -31,6 +31,7 @@ export type TranslationKey =
   | "action.selectAll"
   | "common.camera"
   | "common.captureTime"
+  | "common.codec"
   | "common.dimensions"
   | "common.duration"
   | "common.files"

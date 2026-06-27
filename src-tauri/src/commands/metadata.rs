@@ -41,6 +41,8 @@ pub(crate) async fn get_photo_group_metadata(
                 lens: metadata.lens,
                 width: metadata.width,
                 height: metadata.height,
+                duration: metadata.duration,
+                video_codec: metadata.video_codec,
                 items: metadata
                     .items
                     .into_iter()

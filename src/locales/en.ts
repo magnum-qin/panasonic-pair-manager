@@ -18,6 +18,7 @@ export const en: TranslationMap = {
   "action.selectAll": "Select All",
   "common.camera": "Camera",
   "common.captureTime": "Capture Time",
+  "common.codec": "Codec",
   "common.dimensions": "Dimensions",
   "common.duration": "Duration",
   "common.files": "Files",

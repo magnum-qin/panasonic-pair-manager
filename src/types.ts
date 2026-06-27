@@ -42,6 +42,8 @@ export interface PhotoGroupMetadata {
   lens?: string;
   width?: number;
   height?: number;
+  duration?: string;
+  videoCodec?: string;
   items: PhotoMetadataItem[];
 }
 

@@ -84,6 +84,8 @@ pub struct PhotoGroupMetadata {
     pub lens: Option<String>,
     pub width: Option<i64>,
     pub height: Option<i64>,
+    pub duration: Option<String>,
+    pub video_codec: Option<String>,
     pub items: Vec<PhotoMetadataItem>,
 }
 
