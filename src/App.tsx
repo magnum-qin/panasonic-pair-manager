@@ -1,5 +1,4 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Info, Settings, Video } from "lucide-react";
 import {
   useCallback,
@@ -11,24 +10,10 @@ import {
   useState,
   Suspense,
 } from "react";
-import {
-  clearThumbnailCache,
-  deletePhotoGroups,
-  listRemovableRoots,
-  openPhotoFile,
-  openPhotoGroup,
-  pathExists,
-  selectRootFolder,
-} from "./api";
+import { clearThumbnailCache, deletePhotoGroups, openPhotoFile, openPhotoGroup } from "./api";
 import { PhotoGrid } from "./components/PhotoGrid";
-import { MANUAL_ROOTS_STORAGE_KEY } from "./features/app/app-config";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
-import {
-  activeMemoryKey,
-  dirName,
-  isPreviewWindowRoute,
-  loadStoredManualRoots,
-} from "./features/app/app-utils";
+import { activeMemoryKey, dirName, isPreviewWindowRoute } from "./features/app/app-utils";
 import { MainToolbar } from "./features/app/MainToolbar";
 import { GalleryControls } from "./features/gallery/GalleryControls";
 import { PhotoContextMenu } from "./features/gallery/PhotoContextMenu";
@@ -37,19 +22,13 @@ import { SourcePanel } from "./features/sources/SourcePanel";
 import { useSelectionMode } from "./hooks/useSelectionMode";
 import { usePreviewWindow } from "./hooks/usePreviewWindow";
 import { useMediaLibrary } from "./hooks/useMediaLibrary";
-import { useSourceSelection } from "./hooks/useSourceSelection";
 import { useAppPreferences } from "./hooks/useAppPreferences";
 import { useDeleteWorkflow } from "./hooks/useDeleteWorkflow";
 import { useGalleryLayoutTransition } from "./hooks/useGalleryLayoutTransition";
 import { useMediaMode } from "./hooks/useMediaMode";
 import { useScanWorkflow } from "./hooks/useScanWorkflow";
-import type {
-  DriveCandidate,
-  GroupKindFilter,
-  MediaKindFilter,
-  PhotoGroup,
-  ScanSummary,
-} from "./types";
+import { useSourceLifecycle } from "./hooks/useSourceLifecycle";
+import type { GroupKindFilter, MediaKindFilter, PhotoGroup, ScanSummary } from "./types";
 import { fileName } from "./utils";
 
 const PreviewWindow = lazy(() => import("./PreviewWindow"));
@@ -100,15 +79,8 @@ export default function App() {
     x: number;
     y: number;
   } | null>(null);
-  const [manualRoots, setManualRoots] = useState<string[]>(loadStoredManualRoots);
   const deferredQuery = useDeferredValue(query);
   const activeByRootRef = useRef<Record<string, string>>({});
-  const knownDrivePathsRef = useRef<Set<string>>(new Set());
-  const seenRemovablePathsRef = useRef<Set<string>>(new Set());
-  const initialManualRootSelectedRef = useRef(false);
-  const refreshTimerRef = useRef<number | undefined>(undefined);
-  const refreshDelayTimerRef = useRef<number | undefined>(undefined);
-  const refreshLockedRef = useRef(false);
 
   const clearActiveSource = useCallback((nextMessage?: string) => {
     setRootPath("");
@@ -116,10 +88,6 @@ export default function App() {
     setScanSummary(null);
     if (nextMessage) setMessage(nextMessage);
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(MANUAL_ROOTS_STORAGE_KEY, JSON.stringify(manualRoots));
-  }, [manualRoots]);
 
   const closeModal = useCallback(
     (modal: "about" | "settings" | "delete", setOpen: (open: boolean) => void) => {
@@ -144,14 +112,6 @@ export default function App() {
     closeModal("delete", setDeleteOpen);
   }, [closeModal]);
 
-  const manualAvailabilityQueries = useQueries({
-    queries: manualRoots.map((path) => ({
-      queryFn: () => pathExists(path),
-      queryKey: ["path-exists", path],
-      refetchInterval: 10_000,
-    })),
-  });
-
   const {
     currentSummary,
     detailQuery,
@@ -174,12 +134,6 @@ export default function App() {
     scanSummary,
   });
 
-  const drivesQuery = useQuery({
-    queryFn: listRemovableRoots,
-    queryKey: ["removable-roots"],
-    refetchInterval: 30_000,
-  });
-
   const clearThumbnailCacheMutation = useMutation({
     mutationFn: clearThumbnailCache,
     onSuccess: (stats) => {
@@ -189,29 +143,6 @@ export default function App() {
     },
     onError: (error) => setMessage(String(error)),
   });
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-
-    listen<DriveCandidate[]>("removable-roots-changed", (event) => {
-      queryClient.setQueryData(["removable-roots"], event.payload);
-      if (rootPath) {
-        queryClient.invalidateQueries({ queryKey: ["path-exists", rootPath] });
-      }
-    }).then((nextUnlisten) => {
-      if (cancelled) {
-        nextUnlisten();
-        return;
-      }
-      unlisten = nextUnlisten;
-    });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [queryClient, rootPath]);
 
   const deleteMutation = useMutation({
     mutationFn: deletePhotoGroups,
@@ -236,19 +167,6 @@ export default function App() {
   });
 
   const deleting = deleteMutation.isPending;
-  const detectedRoots = drivesQuery.data ?? [];
-  const {
-    activeSourceIsManual,
-    activeSourceIsRemovable,
-    manualAvailability,
-    manualRootSet,
-    sourceName,
-  } = useSourceSelection({
-    detectedRoots,
-    manualAvailabilityValues: manualAvailabilityQueries.map((query) => query.data),
-    manualRoots,
-    rootPath,
-  });
   const rememberActiveGroup = useCallback(
     (id: string, sourcePath = rootPath) => {
       setActiveId(id);
@@ -290,6 +208,30 @@ export default function App() {
     t,
   });
   const busy = scanning || deleting;
+  const {
+    activeSourceIsManual,
+    activeSourceIsRemovable,
+    chooseFolder,
+    clearManualRoot,
+    detectedRoots,
+    manualAvailability,
+    manualRootSet,
+    manualRoots,
+    refreshRemovableRoots,
+    selectManualRoot,
+    selectRemovableRoot,
+    sourceName,
+  } = useSourceLifecycle({
+    busy,
+    clearActiveSource,
+    queryClient,
+    rootPath,
+    scanPending: scanMutation.isPending,
+    scanRootPath: scanMutation.mutate,
+    setMessage,
+    setRootPath,
+    t,
+  });
   const sourceWasScanned =
     rootScanQuery.data === true || (scanSummary?.rootPath === rootPath && !scanning);
   const statusMessage = scanProgressText || message;
@@ -351,71 +293,6 @@ export default function App() {
     selectedGroups,
     selectedIds,
   });
-
-  useEffect(() => {
-    if (initialManualRootSelectedRef.current || rootPath || !manualRoots.length) return;
-
-    const pending = manualAvailabilityQueries.some((query) => query.isLoading || query.isFetching);
-    if (pending) return;
-
-    initialManualRootSelectedRef.current = true;
-    const firstAvailableRoot =
-      manualRoots.find((path, index) => manualAvailabilityQueries[index]?.data !== false) ?? "";
-    if (!firstAvailableRoot) return;
-
-    setRootPath(firstAvailableRoot);
-    setMessage(
-      t("source.selectedManual", { name: fileName(firstAvailableRoot) || firstAvailableRoot }),
-    );
-  }, [manualAvailabilityQueries, manualRoots, rootPath, t]);
-
-  const chooseFolder = useCallback(async () => {
-    const path = await selectRootFolder();
-    if (!path) return;
-    setManualRoots((current) => (current.includes(path) ? current : [...current, path]));
-    setRootPath(path);
-    if (scanMutation.isPending) {
-      setMessage(t("source.selectedManual", { name: fileName(path) || path }));
-      return;
-    }
-    setMessage(t("source.folderSelected"));
-    scanMutation.mutate(path);
-  }, [scanMutation, t]);
-
-  const refreshRemovableRoots = useCallback(() => {
-    if (refreshLockedRef.current) return;
-    refreshLockedRef.current = true;
-    window.clearTimeout(refreshDelayTimerRef.current);
-    window.clearTimeout(refreshTimerRef.current);
-    refreshDelayTimerRef.current = window.setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ["removable-roots"] });
-      refreshTimerRef.current = window.setTimeout(() => {
-        refreshLockedRef.current = false;
-        refreshTimerRef.current = undefined;
-      }, 650);
-    }, 160);
-  }, [queryClient]);
-
-  const selectManualRoot = useCallback(
-    (path: string) => {
-      setRootPath(path);
-      setMessage(t("source.selectedManual", { name: fileName(path) || path }));
-      queryClient.invalidateQueries({ queryKey: ["photo-groups", path] });
-    },
-    [queryClient, t],
-  );
-
-  const clearManualRoot = useCallback(
-    (path: string) => {
-      setManualRoots((current) => current.filter((root) => root !== path));
-      if (rootPath === path) {
-        clearActiveSource(t("source.folderRemoved"));
-        return;
-      }
-      setMessage(t("source.folderRemoved"));
-    },
-    [clearActiveSource, rootPath, t],
-  );
 
   const applyKindFilter = useCallback(
     (nextKind: GroupKindFilter) => {
@@ -504,14 +381,6 @@ export default function App() {
   }, [groupsQuery.fetchNextPage, groupsQuery.hasNextPage, groupsQuery.isFetchingNextPage]);
 
   useEffect(() => {
-    return () => window.clearTimeout(refreshTimerRef.current);
-  }, []);
-
-  useEffect(() => {
-    return () => window.clearTimeout(refreshDelayTimerRef.current);
-  }, []);
-
-  useEffect(() => {
     clearSelection();
     setActiveId(
       rootPath ? (activeByRootRef.current[activeMemoryKey(rootPath, mediaKind)] ?? "") : "",
@@ -545,49 +414,6 @@ export default function App() {
   useEffect(() => {
     setInspectorTab("info");
   }, [activeId]);
-
-  useEffect(() => {
-    const candidates = drivesQuery.data;
-    if (!candidates) return;
-
-    const currentPaths = new Set(candidates.map((candidate) => candidate.scanPath));
-    const removedActiveRemovableRoot =
-      rootPath &&
-      !manualRootSet.has(rootPath) &&
-      seenRemovablePathsRef.current.has(rootPath) &&
-      !currentPaths.has(rootPath);
-
-    candidates.forEach((candidate) => seenRemovablePathsRef.current.add(candidate.scanPath));
-
-    if (removedActiveRemovableRoot) {
-      clearActiveSource(t("source.removableRemoved"));
-    }
-
-    const nextCandidate = candidates.find(
-      (candidate) => !knownDrivePathsRef.current.has(candidate.scanPath),
-    );
-
-    if (!nextCandidate) {
-      knownDrivePathsRef.current = currentPaths;
-      return;
-    }
-    if (busy) return;
-
-    knownDrivePathsRef.current = currentPaths;
-    const scanPath = nextCandidate.scanPath;
-    setRootPath(scanPath);
-    setMessage(t("status.detectedIndexing", { name: nextCandidate.displayName }));
-    scanMutation.mutate(scanPath);
-  }, [
-    busy,
-    clearActiveSource,
-    drivesQuery.data,
-    manualRootSet,
-    queryClient,
-    rootPath,
-    scanMutation,
-    t,
-  ]);
 
   return (
     <div className={`app-shell ${selectionMode ? "selection-mode" : ""}`}>
@@ -649,15 +475,7 @@ export default function App() {
               queryClient.invalidateQueries({ queryKey: ["photo-groups"] })
             }
             onSelectManualRoot={selectManualRoot}
-            onSelectRemovableRoot={(drive) => {
-              setRootPath(drive.scanPath);
-              if (scanMutation.isPending) {
-                setMessage(t("source.selectedManual", { name: drive.displayName }));
-                return;
-              }
-              setMessage(t("status.detectedIndexing", { name: drive.displayName }));
-              scanMutation.mutate(drive.scanPath);
-            }}
+            onSelectRemovableRoot={selectRemovableRoot}
           />
 
           <PhotoGrid
