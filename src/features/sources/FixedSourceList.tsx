@@ -44,9 +44,7 @@ export function FixedSourceList({
             onClick={() => onSelectManualRoot(path)}
             removeLabel={t("source.removeFolder")}
             subtitle={
-              manualAvailability.get(path) === false
-                ? `${path} 璺?${t("source.unavailable")}`
-                : path
+              manualAvailability.get(path) === false ? `${path} - ${t("source.unavailable")}` : path
             }
             tone={manualAvailability.get(path) === false ? "offline" : undefined}
           />
