@@ -3,8 +3,8 @@ import { useEffect, type ReactNode } from "react";
 import { useElementWidth } from "../hooks/useElementWidth";
 import type { PhotoGroup } from "../types";
 import { formatBytes } from "../utils";
-import { PhotoCard } from "./PhotoCard";
 import { PhotoGridEmptyState } from "./PhotoGridEmptyState";
+import { PhotoGridVirtualRows } from "./PhotoGridVirtualRows";
 
 const GRID_GAP = 14;
 const GRID_PADDING = 18;
@@ -121,43 +121,23 @@ export function PhotoGrid({
           />
         ) : (
           <div className="virtual-grid" style={{ height: virtualizer.getTotalSize() }}>
-            {virtualRows.map((virtualRow) => {
-              const start = virtualRow.index * columns;
-              const rowGroups = groups.slice(start, start + columns);
-              const isLoaderRow = start >= groups.length;
-              return (
-                <div
-                  className={`virtual-row ${isLoaderRow ? "virtual-loader-row" : ""}`}
-                  key={virtualRow.key}
-                  style={{
-                    gridTemplateColumns: `repeat(${columns}, ${cardWidth}px)`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  {isLoaderRow ? (
-                    <div className="inline-loader" aria-live="polite">
-                      <span />
-                      <strong>{isFetchingMore ? loadingMoreLabel : scrollToContinueLabel}</strong>
-                    </div>
-                  ) : (
-                    rowGroups.map((group) => (
-                      <PhotoCard
-                        group={group}
-                        isActive={activeId === group.id}
-                        isSelected={selected.has(group.id)}
-                        key={group.id}
-                        noPreviewLabel={noPreviewLabel}
-                        thumbnailSize={thumbnailSize}
-                        onActivate={onActivate}
-                        onContextMenu={onContextMenu}
-                        onOpen={onOpen}
-                        onToggle={onToggle}
-                      />
-                    ))
-                  )}
-                </div>
-              );
-            })}
+            <PhotoGridVirtualRows
+              activeId={activeId}
+              cardWidth={cardWidth}
+              columns={columns}
+              groups={groups}
+              isFetchingMore={isFetchingMore}
+              loadingMoreLabel={loadingMoreLabel}
+              noPreviewLabel={noPreviewLabel}
+              scrollToContinueLabel={scrollToContinueLabel}
+              selected={selected}
+              thumbnailSize={thumbnailSize}
+              virtualRows={virtualRows}
+              onActivate={onActivate}
+              onContextMenu={onContextMenu}
+              onOpen={onOpen}
+              onToggle={onToggle}
+            />
           </div>
         )}
       </div>
