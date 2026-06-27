@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Info, Settings, Video } from "lucide-react";
-import { useCallback, useDeferredValue, useEffect, lazy, useRef, useState, Suspense } from "react";
+import { useCallback, useDeferredValue, lazy, useRef, useState, Suspense } from "react";
 import { clearThumbnailCache, deletePhotoGroups } from "./api";
 import { PhotoGrid } from "./components/PhotoGrid";
 import { AboutModal, DeleteModal, SettingsModal } from "./features/app/AppModals";
@@ -15,6 +15,7 @@ import { usePreviewWindow } from "./hooks/usePreviewWindow";
 import { useMediaLibrary } from "./hooks/useMediaLibrary";
 import { useAppPreferences } from "./hooks/useAppPreferences";
 import { useDeleteWorkflow } from "./hooks/useDeleteWorkflow";
+import { useGalleryStateCoordinator } from "./hooks/useGalleryStateCoordinator";
 import { useGalleryLayoutTransition } from "./hooks/useGalleryLayoutTransition";
 import { useGalleryEmptyState } from "./hooks/useGalleryEmptyState";
 import { useMediaMode } from "./hooks/useMediaMode";
@@ -22,7 +23,7 @@ import { useModalLifecycle } from "./hooks/useModalLifecycle";
 import { usePhotoActions } from "./hooks/usePhotoActions";
 import { useScanWorkflow } from "./hooks/useScanWorkflow";
 import { useSourceLifecycle } from "./hooks/useSourceLifecycle";
-import type { GroupKindFilter, MediaKindFilter, ScanSummary } from "./types";
+import type { ScanSummary } from "./types";
 
 const PreviewWindow = lazy(() => import("./PreviewWindow"));
 
@@ -228,26 +229,6 @@ export default function App() {
     selectedIds,
   });
 
-  const applyKindFilter = useCallback(
-    (nextKind: GroupKindFilter) => {
-      setGroupKind(nextKind);
-      clearSelection();
-      setActiveId("");
-    },
-    [clearSelection],
-  );
-
-  const switchMediaKind = useCallback(
-    (nextKind: MediaKindFilter) => {
-      transitionMediaKind(nextKind, () => {
-        clearSelection();
-        setActiveId("");
-        setInspectorTab("info");
-      });
-    },
-    [clearSelection, transitionMediaKind],
-  );
-
   const confirmDelete = useCallback(() => {
     if (!selected.size) return;
     deleteMutation.mutate([...selected]);
@@ -280,46 +261,24 @@ export default function App() {
     visibleGroups,
   });
 
-  const loadMoreGroups = useCallback(() => {
-    if (groupsQuery.hasNextPage && !groupsQuery.isFetchingNextPage) {
-      groupsQuery.fetchNextPage();
-    }
-  }, [groupsQuery.fetchNextPage, groupsQuery.hasNextPage, groupsQuery.isFetchingNextPage]);
-
-  useEffect(() => {
-    clearSelection();
-    setActiveId(
-      rootPath ? (activeByRootRef.current[activeMemoryKey(rootPath, mediaKind)] ?? "") : "",
-    );
-    setInspectorTab("info");
-  }, [clearSelection, mediaKind, rootPath]);
-
-  useEffect(() => {
-    if (!visibleGroups.length) {
-      if (activeId) setActiveId("");
-      return;
-    }
-
-    if (activeId && visibleGroups.some((group) => group.id === activeId)) return;
-
-    const rememberedId = rootPath
-      ? activeByRootRef.current[activeMemoryKey(rootPath, mediaKind)]
-      : "";
-    const nextId =
-      rememberedId && visibleGroups.some((group) => group.id === rememberedId)
-        ? rememberedId
-        : visibleGroups[0].id;
-    rememberActiveGroup(nextId, rootPath);
-  }, [activeId, mediaKind, rememberActiveGroup, rootPath, visibleGroups]);
-
-  useEffect(() => {
-    if (hasSource) return;
-    clearActiveSource();
-  }, [clearActiveSource, hasSource]);
-
-  useEffect(() => {
-    setInspectorTab("info");
-  }, [activeId]);
+  const { applyKindFilter, loadMoreGroups, switchMediaKind } = useGalleryStateCoordinator({
+    activeByRootRef,
+    activeId,
+    clearActiveSource,
+    clearSelection,
+    fetchNextGroups: groupsQuery.fetchNextPage,
+    groupsHasNextPage: Boolean(groupsQuery.hasNextPage),
+    groupsIsFetchingNextPage: groupsQuery.isFetchingNextPage,
+    hasSource,
+    mediaKind,
+    rememberActiveGroup,
+    rootPath,
+    setActiveId,
+    setGroupKind,
+    setInspectorTab,
+    transitionMediaKind,
+    visibleGroups,
+  });
 
   return (
     <div className={`app-shell ${selectionMode ? "selection-mode" : ""}`}>
