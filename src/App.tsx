@@ -26,6 +26,7 @@ import { useAppPreferences } from "./hooks/useAppPreferences";
 import { useDeleteWorkflow } from "./hooks/useDeleteWorkflow";
 import { useGalleryLayoutTransition } from "./hooks/useGalleryLayoutTransition";
 import { useMediaMode } from "./hooks/useMediaMode";
+import { useModalLifecycle } from "./hooks/useModalLifecycle";
 import { useScanWorkflow } from "./hooks/useScanWorkflow";
 import { useSourceLifecycle } from "./hooks/useSourceLifecycle";
 import type { GroupKindFilter, MediaKindFilter, PhotoGroup, ScanSummary } from "./types";
@@ -60,10 +61,19 @@ export default function App() {
     theme,
     updateCardSize,
   } = useAppPreferences();
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [aboutOpen, setAboutOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [closingModal, setClosingModal] = useState<"about" | "settings" | "delete" | null>(null);
+  const {
+    aboutOpen,
+    closeAbout,
+    closeDelete,
+    closeSettings,
+    closingModal,
+    deleteOpen,
+    modalOpen,
+    openAbout,
+    openDelete,
+    openSettings,
+    settingsOpen,
+  } = useModalLifecycle();
   const [inspectorTab, setInspectorTab] = useState<"info" | "metadata">("info");
   const { galleryLayoutTransitioning, inspectorCollapsed, toggleInspector } =
     useGalleryLayoutTransition();
@@ -88,29 +98,6 @@ export default function App() {
     setScanSummary(null);
     if (nextMessage) setMessage(nextMessage);
   }, []);
-
-  const closeModal = useCallback(
-    (modal: "about" | "settings" | "delete", setOpen: (open: boolean) => void) => {
-      setClosingModal(modal);
-      window.setTimeout(() => {
-        setOpen(false);
-        setClosingModal((current) => (current === modal ? null : current));
-      }, 160);
-    },
-    [],
-  );
-
-  const closeAbout = useCallback(() => {
-    closeModal("about", setAboutOpen);
-  }, [closeModal]);
-
-  const closeSettings = useCallback(() => {
-    closeModal("settings", setSettingsOpen);
-  }, [closeModal]);
-
-  const closeDelete = useCallback(() => {
-    closeModal("delete", setDeleteOpen);
-  }, [closeModal]);
 
   const {
     currentSummary,
@@ -287,7 +274,6 @@ export default function App() {
     sourceWasScanned,
     t,
   ]);
-  const modalOpen = aboutOpen || settingsOpen || deleteOpen;
   const { deleteDetailLoading, deleteFiles, deletePlan } = useDeleteWorkflow({
     deleteOpen,
     selectedGroups,
@@ -322,13 +308,15 @@ export default function App() {
     setContextMenu(null);
   }, []);
 
-  const deleteContextGroup = useCallback((group: PhotoGroup) => {
-    setSelected(new Set([group.id]));
-    setSelectionMode(true);
-    setClosingModal(null);
-    setDeleteOpen(true);
-    setContextMenu(null);
-  }, []);
+  const deleteContextGroup = useCallback(
+    (group: PhotoGroup) => {
+      setSelected(new Set([group.id]));
+      setSelectionMode(true);
+      openDelete();
+      setContextMenu(null);
+    },
+    [openDelete, setSelected, setSelectionMode],
+  );
 
   const confirmDelete = useCallback(() => {
     if (!selected.size) return;
@@ -431,10 +419,7 @@ export default function App() {
           t={t}
           visibleGroupCount={visibleGroups.length}
           onChooseFolder={chooseFolder}
-          onDeleteSelected={() => {
-            setClosingModal(null);
-            setDeleteOpen(true);
-          }}
+          onDeleteSelected={openDelete}
           onQueryChange={(value) => {
             setQuery(value);
             setActiveId("");
@@ -543,24 +528,10 @@ export default function App() {
             <span>{statusMessage}</span>
           </div>
           <div className="status-actions">
-            <button
-              className="status-info"
-              aria-label={t("common.info")}
-              onClick={() => {
-                setClosingModal(null);
-                setAboutOpen(true);
-              }}
-            >
+            <button className="status-info" aria-label={t("common.info")} onClick={openAbout}>
               <Info size={15} />
             </button>
-            <button
-              className="status-info"
-              aria-label={t("setting.open")}
-              onClick={() => {
-                setClosingModal(null);
-                setSettingsOpen(true);
-              }}
-            >
+            <button className="status-info" aria-label={t("setting.open")} onClick={openSettings}>
               <Settings size={15} />
             </button>
           </div>
