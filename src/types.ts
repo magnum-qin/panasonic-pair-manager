@@ -65,12 +65,7 @@ export interface PhotoGroupFilter {
 export type GroupKindFilter = "all" | "paired" | "rawOnly" | "jpgOnly";
 export type MediaKindFilter = "photos" | "videos";
 export type PhotoSortMode =
-  | "captureAsc"
-  | "captureDesc"
-  | "nameAsc"
-  | "nameDesc"
-  | "sizeDesc"
-  | "sizeAsc";
+  "captureAsc" | "captureDesc" | "nameAsc" | "nameDesc" | "sizeDesc" | "sizeAsc";
 
 export interface ScanSummary {
   rootPath: string;
