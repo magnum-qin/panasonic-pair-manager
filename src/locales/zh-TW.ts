@@ -131,7 +131,7 @@ export const zhTW: TranslationMap = {
   "status.opening": "正在開啟照片...",
   "status.ready": "就緒。",
   "status.scanCompleted": "掃描完成：{groups} 組，{files} 個檔案。",
-  "status.scanProgress": "正在掃描 {dir}：已檢查 {scanned} 個檔案，匹配 {matched} 個照片檔案。",
+  "status.scanProgress": "正在掃描 {dir}：已檢查 {scanned} 個檔案，匹配 {matched} 個媒體檔案。",
   "status.scanning": "正在掃描資料夾...",
   "status.thumbnailCacheCleared": "縮圖快取已清理。",
 };

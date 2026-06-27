@@ -91,7 +91,7 @@ export function useScanWorkflow({
 
   const scanning = scanMutation.isPending;
   const scanProgressText =
-    scanning && scanProgress?.rootPath === rootPath
+    scanning && scanProgress
       ? t("status.scanProgress", {
           scanned: scanProgress.scannedFiles,
           matched: scanProgress.matchedFiles,

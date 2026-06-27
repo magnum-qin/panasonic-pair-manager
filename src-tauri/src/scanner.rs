@@ -44,6 +44,13 @@ where
     let groups = build_groups_with_progress(&root_path, &mut on_progress);
     let summary = summarize(&root_path, &groups);
     db.replace_root_scan(&root_path, &groups)?;
+    on_progress(ScanProgress {
+        root_path: root_path.to_string_lossy().to_string(),
+        scanned_files: summary.files,
+        matched_files: summary.raw_files + summary.jpg_files + summary.video_files,
+        current_dir: root_path.to_string_lossy().to_string(),
+        done: true,
+    });
     Ok(summary)
 }
 

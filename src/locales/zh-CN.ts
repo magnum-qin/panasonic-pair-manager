@@ -130,7 +130,7 @@ export const zhCN: TranslationMap = {
   "status.opening": "正在打开照片...",
   "status.ready": "就绪。",
   "status.scanCompleted": "扫描完成：{groups} 组，{files} 个文件。",
-  "status.scanProgress": "正在扫描 {dir}：已检查 {scanned} 个文件，匹配 {matched} 个照片文件。",
+  "status.scanProgress": "正在扫描 {dir}：已检查 {scanned} 个文件，匹配 {matched} 个媒体文件。",
   "status.scanning": "正在扫描文件夹...",
   "status.thumbnailCacheCleared": "缩略图缓存已清理。",
 };

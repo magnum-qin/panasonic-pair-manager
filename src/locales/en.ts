@@ -139,7 +139,7 @@ export const en: TranslationMap = {
   "status.opening": "Opening photo...",
   "status.ready": "Ready.",
   "status.scanCompleted": "Scan completed: {groups} groups, {files} files.",
-  "status.scanProgress": "Scanning {dir}: {scanned} files checked, {matched} photo files matched.",
+  "status.scanProgress": "Scanning {dir}: {scanned} files checked, {matched} media files matched.",
   "status.scanning": "Scanning folders...",
   "status.thumbnailCacheCleared": "Thumbnail cache cleared.",
 };
